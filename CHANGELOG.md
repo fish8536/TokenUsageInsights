@@ -4,6 +4,25 @@
 
 ## [未發行]
 
+## [1.5.0] - 2026-10-21
+
+### 新增與改善
+
+- 徹底替換模型定價來源為社群開源的 LiteLLM `model_prices_and_context_window.json`：
+  - 支援數千種主流商業與開源模型，涵蓋 OpenAI、Anthropic、Google、xAI、DeepSeek、MiniMax、Moonshot 等完整價格矩陣。
+  - 核心計價模組支援智慧前綴剝離（如 `openai/`、`anthropic/`、`xai/` 等）與模型名稱模糊正規化比對。
+  - 完整支援階梯門檻計價（`_above_100k_tokens`、`_above_200k_tokens`、`_above_272k_tokens` 等自動對照上下文門檻）。
+- 新增模型定價線上更新機制：
+  - CLI 新增 `token-usage-insights pricing update` 子命令，支援手動自 GitHub raw 來源拉取最新模型價格並原子寫入快取，並支援 `--check` 檢查。
+- 前端效能與無障礙體驗優化：
+  - 將側邊欄 Codex 額度限制進度條動畫由 `transition: width` 重構為 GPU 合成層處理的 `transform: scaleX`，消除 Layout Thrashing（Reflow）。
+  - 為側邊欄 12 個 Agent 按鈕補齊 `:focus-visible` 外框與底色高亮，強化鍵盤導航可見度（符合 WCAG 2.4.7）。
+  - 同步 `DESIGN.md` 字型宣告為 `IBM Plex Sans` 與 `IBM Plex Mono` 系列。
+
+### 相容性
+
+- 移除根目錄舊有的靜態 `pricing.csv`。各平台安裝腳本（`install.sh`、`install.ps1`）、打包工作流程（`release.yml`、`npm/install.cjs`）與服務自我更新驗證（`updater.rs`）全面轉向 `model_prices_and_context_window.json`。
+
 ## [1.4.1] - 2026-10-21
 
 ### 新增與改善
@@ -994,7 +1013,8 @@
 - 修正行動版側邊欄遮擋、黑畫面、標題擠壓、圖表導覽索引與年度版面問題。
 - 修正並補齊多個 Gemini、Claude、GPT 與 GPT-OSS 模型的定價規則。
 
-[未發行]: https://github.com/doggy8088/TokenUsageInsights/compare/v1.4.1...HEAD
+[未發行]: https://github.com/doggy8088/TokenUsageInsights/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/doggy8088/TokenUsageInsights/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/doggy8088/TokenUsageInsights/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/doggy8088/TokenUsageInsights/compare/v1.3.2...v1.4.0
 [1.3.2]: https://github.com/doggy8088/TokenUsageInsights/compare/v1.3.1...v1.3.2
