@@ -11,11 +11,13 @@ use std::collections::{BTreeMap, HashMap};
 pub mod daily;
 pub mod misc;
 pub mod monthly;
+pub mod weekly;
 pub mod yearly;
 
 pub use daily::*;
 pub use misc::*;
 pub use monthly::*;
+pub use weekly::*;
 pub use yearly::*;
 
 pub fn normalize_assistant_name(assistant: &str) -> String {
@@ -234,6 +236,27 @@ pub struct YearlyDetailsResponse {
     pub agent_breakdown: HashMap<String, AgentBreakdown>,
 }
 
+pub use crate::db::WeekInfo;
+
+#[derive(Serialize)]
+pub struct WeekListResponse {
+    pub weeks: Vec<WeekInfo>,
+}
+
+pub type WeeklyDailyBreakdown = MonthlyDailyBreakdown;
+
+#[derive(Serialize)]
+pub struct WeeklyDetailsResponse {
+    pub year_week: String,
+    pub start_date: String,
+    pub end_date: String,
+    pub summary: DaySummary,
+    pub daily_breakdown: Vec<WeeklyDailyBreakdown>,
+    pub projects: Vec<MonthlyProjectSummary>,
+    pub models: Vec<MonthlyModelSummary>,
+    pub agent_breakdown: HashMap<String, AgentBreakdown>,
+}
+
 #[derive(Serialize)]
 pub struct YearListResponse {
     pub years: Vec<String>,
@@ -242,6 +265,7 @@ pub struct YearListResponse {
 #[cfg(test)]
 mod tests {
     use crate::db;
+    use axum::{extract::Path, response::IntoResponse};
     use std::{env, fs, sync::OnceLock};
     use tokio::sync::{Mutex, MutexGuard};
 
@@ -317,7 +341,88 @@ mod tests {
         }
         assert_eq!(years, vec!["2026", "2025"]);
 
+        // 2. Test get_available_weeks
+        let weeks = db::get_available_weeks(&conn, "antigravity").unwrap();
+        assert_eq!(weeks.len(), 2);
+        assert_eq!(weeks[0].week, "2026-W27");
+        assert_eq!(weeks[0].start_date, "2026-06-29");
+        assert_eq!(weeks[0].end_date, "2026-07-05");
+
         // Cleanup
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_weekly_handlers() {
+        let _guard = lock_test_env().await;
+        let temp_dir = env::temp_dir().join(format!(
+            "tui-weekly-handlers-{}-{}",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        fs::create_dir_all(&temp_dir).unwrap();
+        let previous_insights_dir = env::var_os("INSIGHTS_DIR");
+        env::set_var("INSIGHTS_DIR", &temp_dir);
+
+        let conn = rusqlite::Connection::open(temp_dir.join("token_usage_insights.db")).unwrap();
+        db::init_db(&conn).unwrap();
+
+        conn.execute(
+            "INSERT INTO usage_entries (
+                assistant_type, timestamp, date, session_id, session_name, cwd, turn_no, model,
+                tokens_input, tokens_output, tokens_cache_read, tokens_total,
+                delta_input, delta_output, delta_cache_read, delta_total
+            ) VALUES (
+                'gemini', '2026-10-13 08:00:00', '2026-10-13', 'session_w', 'Session W', '/cwd/w', 1, 'gemini-3.8-flash',
+                100, 50, 20, 150,
+                100, 50, 20, 150
+            )",
+            [],
+        ).unwrap();
+
+        // 1. Test get_available_weeks route
+        let (status, body) = response_json(
+            super::get_available_weeks(Path("gemini".to_string()))
+                .await
+                .into_response(),
+        )
+        .await;
+        assert_eq!(status, 200);
+        let weeks = body["weeks"].as_array().unwrap();
+        assert_eq!(weeks.len(), 1);
+        assert_eq!(weeks[0]["week"], "2026-W42");
+        assert_eq!(weeks[0]["start_date"], "2026-10-12");
+        assert_eq!(weeks[0]["end_date"], "2026-10-18");
+
+        // 2. Test get_weekly_details route
+        let (status, body) = response_json(
+            super::get_weekly_details(Path(("gemini".to_string(), "2026-W42".to_string())))
+                .await
+                .into_response(),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert_eq!(body["year_week"], "2026-W42");
+        assert_eq!(body["start_date"], "2026-10-12");
+        assert_eq!(body["end_date"], "2026-10-18");
+        assert_eq!(body["summary"]["total_tokens"], 150);
+
+        // 3. Test invalid week format
+        let res_invalid = super::get_weekly_details(Path(("gemini".to_string(), "invalid-week".to_string())))
+            .await
+            .into_response();
+        assert_eq!(res_invalid.status().as_u16(), 400);
+
+        // 4. Test non-existent week
+        let res_404 = super::get_weekly_details(Path(("gemini".to_string(), "2026-W01".to_string())))
+            .await
+            .into_response();
+        assert_eq!(res_404.status().as_u16(), 404);
+
+        match previous_insights_dir {
+            Some(value) => env::set_var("INSIGHTS_DIR", value),
+            None => env::remove_var("INSIGHTS_DIR"),
+        }
         let _ = fs::remove_dir_all(&temp_dir);
     }
 
