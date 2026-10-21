@@ -55,7 +55,8 @@ pub async fn get_weekly_details(
 
     let report = tokio::task::spawn_blocking(move || {
         let conn = db::get_db_conn()?;
-        let entries = db::get_usage_entries_by_date_range(&conn, &start_date, &end_date, &assistant)?;
+        let entries =
+            db::get_usage_entries_by_date_range(&conn, &start_date, &end_date, &assistant)?;
         if entries.is_empty() {
             return Ok(None);
         }
@@ -113,7 +114,7 @@ mod tests {
     fn parse_iso_week_range_computes_monday_to_sunday() {
         let (start, end) = db::parse_iso_week_range("2026-W42").expect("valid week");
         assert_eq!(start, "2026-10-12"); // Monday
-        assert_eq!(end, "2026-10-18");   // Sunday
+        assert_eq!(end, "2026-10-18"); // Sunday
 
         let (start1, end1) = db::parse_iso_week_range("2026-W01").expect("valid week 1");
         assert_eq!(start1, "2025-12-29");

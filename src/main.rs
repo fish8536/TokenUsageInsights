@@ -366,10 +366,7 @@ async fn main() {
             get(get_monthly_details),
         )
         .route("/api/:assistant/weeks", get(get_available_weeks))
-        .route(
-            "/api/:assistant/weekly/:year_week",
-            get(get_weekly_details),
-        )
+        .route("/api/:assistant/weekly/:year_week", get(get_weekly_details))
         .route("/api/:assistant/model-sessions", get(get_model_sessions))
         .route("/api/:assistant/years", get(get_available_years))
         .route("/api/:assistant/yearly/:year", get(get_yearly_details))
