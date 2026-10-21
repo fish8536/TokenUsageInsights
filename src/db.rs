@@ -6296,17 +6296,17 @@ fn map_usage_day_row(
 
     let reported_cost_usd: Option<f64> =
         row.get::<_, Option<f64>>(35).map_err(|e| e.to_string())?;
-    let cost =
-        if duration_ms.is_some() || premium_requests.is_some() || reported_cost_usd.is_some() {
-            Some(CostStats {
-                total_api_duration_ms: duration_ms,
-                total_duration_ms: None,
-                total_premium_requests: premium_requests,
-                reported_cost_usd,
-            })
-        } else {
-            None
-        };
+    let cost = if duration_ms.is_some() || premium_requests.is_some() || reported_cost_usd.is_some()
+    {
+        Some(CostStats {
+            total_api_duration_ms: duration_ms,
+            total_duration_ms: None,
+            total_premium_requests: premium_requests,
+            reported_cost_usd,
+        })
+    } else {
+        None
+    };
     let import_source_id = normalize_import_source_id(
         row.get::<_, Option<String>>(32)
             .map_err(|e| e.to_string())?
@@ -6417,7 +6417,9 @@ pub fn export_usage_period_entries(
     if let Some((start_date, end_date)) = parse_iso_week_range(period) {
         let mut dates = get_available_dates(conn, assistant)?
             .into_iter()
-            .filter(|date| date.as_str() >= start_date.as_str() && date.as_str() <= end_date.as_str())
+            .filter(|date| {
+                date.as_str() >= start_date.as_str() && date.as_str() <= end_date.as_str()
+            })
             .collect::<Vec<_>>();
         dates.sort();
 
@@ -7548,10 +7550,14 @@ pub fn get_available_weeks(
         let week_id = format!("{year}-W{week_num:02}");
 
         if seen_weeks.insert(week_id.clone()) {
-            let Some(start_date) = chrono::NaiveDate::from_isoywd_opt(year, week_num, chrono::Weekday::Mon) else {
+            let Some(start_date) =
+                chrono::NaiveDate::from_isoywd_opt(year, week_num, chrono::Weekday::Mon)
+            else {
                 continue;
             };
-            let Some(end_date) = chrono::NaiveDate::from_isoywd_opt(year, week_num, chrono::Weekday::Sun) else {
+            let Some(end_date) =
+                chrono::NaiveDate::from_isoywd_opt(year, week_num, chrono::Weekday::Sun)
+            else {
                 continue;
             };
             let label = format!(

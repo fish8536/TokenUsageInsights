@@ -407,15 +407,17 @@ mod tests {
         assert_eq!(body["summary"]["total_tokens"], 150);
 
         // 3. Test invalid week format
-        let res_invalid = super::get_weekly_details(Path(("gemini".to_string(), "invalid-week".to_string())))
-            .await
-            .into_response();
+        let res_invalid =
+            super::get_weekly_details(Path(("gemini".to_string(), "invalid-week".to_string())))
+                .await
+                .into_response();
         assert_eq!(res_invalid.status().as_u16(), 400);
 
         // 4. Test non-existent week
-        let res_404 = super::get_weekly_details(Path(("gemini".to_string(), "2026-W01".to_string())))
-            .await
-            .into_response();
+        let res_404 =
+            super::get_weekly_details(Path(("gemini".to_string(), "2026-W01".to_string())))
+                .await
+                .into_response();
         assert_eq!(res_404.status().as_u16(), 404);
 
         match previous_insights_dir {
