@@ -110,6 +110,7 @@
       <div class="sidebar-section" style="display: none !important;">
         <div class="tabs-nav">
           <button class="nav-tab active" id="tab-btn-daily" data-i18n="tab_daily">每日</button>
+          <button class="nav-tab" id="tab-btn-weekly" data-i18n="tab_weekly">週度</button>
           <button class="nav-tab" id="tab-btn-monthly" data-i18n="tab_monthly">月度</button>
           <button class="nav-tab" id="tab-btn-yearly" data-i18n="tab_yearly">年度</button>
         </div>
@@ -127,6 +128,7 @@
               </div>
               <div class="hover-dropdown-options">
                 <div class="hover-dropdown-option" data-value="daily" data-i18n="tab_daily">每日</div>
+                <div class="hover-dropdown-option" data-value="weekly" data-i18n="tab_weekly">週度</div>
                 <div class="hover-dropdown-option" data-value="monthly" data-i18n="tab_monthly">月度</div>
                 <div class="hover-dropdown-option" data-value="yearly" data-i18n="tab_yearly">年度</div>
               </div>
@@ -174,6 +176,38 @@
         </div>
       </div>
 
+      <!-- Section 1.8: Weekly Selector (hidden by default) -->
+      <div class="sidebar-section hidden" id="weekly-selector-section">
+        <h3 data-i18n="select_week">選擇週次</h3>
+        <div class="date-selector-wrapper" style="display: flex; flex-direction: column; gap: 10px; width: 100%;">
+          <div style="display: flex; gap: 8px; width: 100%; align-items: stretch;">
+            <div class="hover-dropdown tab-hover-dropdown" style="flex: 0 0 75px; min-width: 75px;">
+              <div class="hover-dropdown-trigger" style="height: 100%; display: flex; align-items: center; justify-content: space-between; border-radius: 12px; padding: 12px 10px; background: var(--bg-select); border: 1px solid var(--glass-border); color: var(--text-primary); font-family: var(--font-body); font-weight: 500;">
+                <span class="tab-dropdown-label" data-i18n="tab_weekly">週度</span>
+                <span class="dropdown-caret"><span class="icon-glyph icon-chevron-down" aria-hidden="true"></span></span>
+              </div>
+              <div class="hover-dropdown-options">
+                <div class="hover-dropdown-option" data-value="daily" data-i18n="tab_daily">每日</div>
+                <div class="hover-dropdown-option" data-value="weekly" data-i18n="tab_weekly">週度</div>
+                <div class="hover-dropdown-option" data-value="monthly" data-i18n="tab_monthly">月度</div>
+                <div class="hover-dropdown-option" data-value="yearly" data-i18n="tab_yearly">年度</div>
+              </div>
+            </div>
+            <select id="week-select" class="premium-select" style="flex: 1.5; min-width: 120px; margin: 0; box-sizing: border-box;">
+              <option value="" disabled selected data-i18n="loading">載入中...</option>
+            </select>
+          </div>
+          <div style="display: flex; gap: 8px; width: 100%;">
+            <button id="btn-prev-week" class="today-btn" style="flex: 1; padding: 12px 8px;" data-i18n-title="prev_week_btn" title="前一週" aria-label="前一週"><span class="icon-glyph icon-chevron-left" aria-hidden="true"></span></button>
+            <button id="btn-this-week" class="today-btn" style="flex: 2; padding: 12px 8px;">
+              <span data-i18n="this_week_btn">本週</span>
+            </button>
+            <button id="btn-next-week" class="today-btn" style="flex: 1; padding: 12px 8px;" data-i18n-title="next_week_btn" title="後一週" aria-label="後一週"><span class="icon-glyph icon-chevron-right" aria-hidden="true"></span></button>
+            <button id="btn-reload-weekly" class="reload-btn" style="width: 45px; height: auto;" data-i18n-title="reload_data" title="重新載入數據" aria-label="重新載入數據"><span class="icon-glyph icon-refresh" aria-hidden="true"></span></button>
+          </div>
+        </div>
+      </div>
+
       <!-- Section 2: Monthly Selector (hidden by default) -->
       <div class="sidebar-section hidden" id="monthly-selector-section">
         <h3 data-i18n="select_month">選擇月份</h3>
@@ -186,6 +220,7 @@
               </div>
               <div class="hover-dropdown-options">
                 <div class="hover-dropdown-option" data-value="daily" data-i18n="tab_daily">每日</div>
+                <div class="hover-dropdown-option" data-value="weekly" data-i18n="tab_weekly">週度</div>
                 <div class="hover-dropdown-option" data-value="monthly" data-i18n="tab_monthly">月度</div>
                 <div class="hover-dropdown-option" data-value="yearly" data-i18n="tab_yearly">年度</div>
               </div>
@@ -217,6 +252,7 @@
               </div>
               <div class="hover-dropdown-options">
                 <div class="hover-dropdown-option" data-value="daily" data-i18n="tab_daily">每日</div>
+                <div class="hover-dropdown-option" data-value="weekly" data-i18n="tab_weekly">週度</div>
                 <div class="hover-dropdown-option" data-value="monthly" data-i18n="tab_monthly">月度</div>
                 <div class="hover-dropdown-option" data-value="yearly" data-i18n="tab_yearly">年度</div>
               </div>
@@ -609,6 +645,200 @@
                 </tr>
               </tbody>
             </table>
+          </div>
+        </section>
+      </div>
+
+      <!-- Weekly View Container (hidden by default) -->
+      <div id="weekly-view-container" class="hidden">
+        <!-- Weekly Metrics Grid -->
+        <section class="dashboard-grid">
+          <div class="stat-card highlight">
+            <div class="card-icon"><span class="icon-glyph icon-calendar" aria-hidden="true"></span></div>
+            <div class="stat-info">
+              <span class="label" data-i18n="weekly_tokens_label">週總消耗 Token</span>
+              <span class="value" id="weekly-stat-total-tokens">0</span>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <div class="card-icon"><span class="icon-glyph icon-input" aria-hidden="true"></span></div>
+            <div class="stat-info">
+              <span class="label" data-i18n="weekly_input_label">週輸入 Token</span>
+              <span class="value" id="weekly-stat-input-tokens">0</span>
+              <span class="sub-label" id="weekly-stat-input-pct" data-i18n="ratio_zero">佔比: 0%</span>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <div class="card-icon"><span class="icon-glyph icon-cache" aria-hidden="true"></span></div>
+            <div class="stat-info">
+              <span class="label" data-i18n="weekly_cache_input_label">週快取輸入 Token</span>
+              <span class="value" id="weekly-stat-cache-input-tokens">0</span>
+              <span class="sub-label" id="weekly-stat-cache-input-pct" data-i18n="ratio_zero">佔比: 0%</span>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <div class="card-icon"><span class="icon-glyph icon-output" aria-hidden="true"></span></div>
+            <div class="stat-info">
+              <span class="label" data-i18n="weekly_output_label">週輸出 Token</span>
+              <span class="value" id="weekly-stat-output-tokens">0</span>
+              <span class="sub-label" id="weekly-stat-output-pct" data-i18n="ratio_zero">佔比: 0%</span>
+            </div>
+          </div>
+
+          <div class="stat-card highlight-gold">
+            <div class="card-icon"><span class="icon-glyph icon-cost" aria-hidden="true"></span></div>
+            <div class="stat-info">
+              <span class="label" data-i18n="estimated_cost_label">估算費用 (美金)</span>
+              <span class="value" id="weekly-stat-total-cost">$0.00</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- 合併全部 Agent 時的用量分佈（僅於 agent=all 顯示） -->
+        <section class="agent-share-section hidden" id="weekly-agent-share-section" aria-labelledby="weekly-agent-share-title">
+          <div class="glass-card agent-share-card">
+            <div class="agent-share-header">
+              <div class="agent-share-heading">
+                <h3 id="weekly-agent-share-title" data-i18n="agent_share_title">Agent 用量分佈</h3>
+                <p class="agent-share-caption" data-i18n="agent_share_caption">合併本機所有 Agent 的 Token 與估算費用；點選任一 Agent 可切換到該 Agent 的同期報表。</p>
+              </div>
+              <span class="agent-share-count" id="weekly-agent-share-count" aria-live="polite"></span>
+            </div>
+            <div class="agent-share-strip" id="weekly-agent-share-strip" role="img"></div>
+            <div class="table-wrapper agent-share-table-wrapper">
+              <table class="premium-table agent-share-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="col_assistant">Agent</th>
+                    <th class="numeric" data-i18n="col_sessions_count">會話數</th>
+                    <th class="numeric" data-i18n="col_input">輸入</th>
+                    <th class="numeric" data-i18n="col_output">輸出</th>
+                    <th class="numeric" data-i18n="col_cache">快取</th>
+                    <th class="numeric" data-i18n="col_total">總計</th>
+                    <th data-i18n="agent_share_token_col">Token 佔比</th>
+                    <th class="numeric" data-i18n="col_cost">估算費用 (美金)</th>
+                    <th data-i18n="agent_share_cost_col">費用佔比</th>
+                  </tr>
+                </thead>
+                <tbody id="weekly-agent-share-body">
+                  <tr>
+                    <td colspan="9" class="placeholder-text" data-i18n="agent_share_empty">此期間沒有任何 Agent 的使用紀錄</td>
+                  </tr>
+                </tbody>
+                <tfoot id="weekly-agent-share-foot"></tfoot>
+              </table>
+            </div>
+          </div>
+          <div class="glass-card agent-trend-card">
+            <div class="chart-title-row agent-trend-header">
+              <h3 data-i18n="agent_trend_title_weekly">當週每日各 Agent 用量堆疊</h3>
+              <div class="agent-metric-toggle" role="group" data-i18n-aria-label="agent_trend_metric_label" aria-label="堆疊指標">
+                <button type="button" class="chart-interval-button is-active" data-agent-metric="cost" aria-pressed="true" data-i18n="agent_trend_metric_cost">費用</button>
+                <button type="button" class="chart-interval-button" data-agent-metric="tokens" aria-pressed="false" data-i18n="agent_trend_metric_tokens">Token</button>
+              </div>
+            </div>
+            <div class="canvas-wrapper agent-trend-canvas">
+              <canvas id="weeklyAgentTrendChart" role="img" data-i18n-aria-label="agent_trend_chart_aria" aria-label="各 Agent 用量堆疊長條圖"></canvas>
+            </div>
+          </div>
+        </section>
+
+        <!-- Weekly Charts Section -->
+        <section class="charts-section">
+          <div class="chart-container glass-card">
+            <div class="chart-title-row">
+              <h3 data-i18n="chart_weekly_title">單週每日 Token 消耗與會話數趨勢</h3>
+              <div class="chart-title-stat" aria-live="polite">
+                <span class="chart-title-stat-label" data-i18n="weekly_sessions_label">週總會話數</span>
+                <span class="chart-title-stat-value" id="weekly-chart-total-sessions">0</span>
+              </div>
+            </div>
+            <div class="canvas-wrapper">
+              <canvas id="weeklyTokenChart"></canvas>
+            </div>
+          </div>
+        </section>
+
+        <!-- Weekly Daily Summary -->
+        <section class="monthly-daily-summary-section" style="margin-top: 24px;">
+          <div class="glass-card">
+            <div class="section-header">
+              <h3 style="margin-bottom: 0px;" data-i18n="weekly_daily_summary_title">當週每日彙總</h3>
+            </div>
+            <div class="table-wrapper" style="margin-top: 18px;">
+              <table class="premium-table">
+                <thead>
+                  <tr>
+                    <th class="sortable" data-sort="date" data-table="weekly"><span data-i18n="col_date">日期</span> <span class="sort-icon"></span></th>
+                    <th class="sortable" data-sort="input" data-table="weekly"><span data-i18n="col_input">輸入</span> <span class="sort-icon"></span></th>
+                    <th class="sortable" data-sort="output" data-table="weekly"><span data-i18n="col_output">輸出</span> <span class="sort-icon"></span></th>
+                    <th class="sortable" data-sort="reasoning" data-table="weekly"><span data-i18n="col_reasoning">推理</span> <span class="sort-icon"></span></th>
+                    <th class="sortable" data-sort="cache" data-table="weekly"><span data-i18n="col_cache">快取</span> <span class="sort-icon"></span></th>
+                    <th class="sortable" data-sort="total" data-table="weekly"><span data-i18n="col_total">總計</span> <span class="sort-icon"></span></th>
+                    <th class="sortable" data-sort="cost" data-table="weekly"><span data-i18n="col_cost">估算費用 (美金)</span> <span class="sort-icon"></span></th>
+                  </tr>
+                </thead>
+                <tbody id="weekly-daily-summary-body">
+                  <tr>
+                    <td colspan="7" class="placeholder-text" data-i18n="placeholder_no_daily_summary">無每日彙總數據</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- Weekly Projects & Models Grid -->
+        <section class="monthly-tables-grid" style="margin-top: 24px;">
+          <div class="glass-card">
+            <div class="section-header">
+              <h3 style="margin-bottom: 0px;" data-i18n="monthly_projects_title">最常活動的專案目錄</h3>
+            </div>
+            <div class="table-wrapper" style="margin-top: 18px;">
+              <table class="premium-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="col_rank">排名</th>
+                    <th data-i18n="col_project_cwd">工作路徑 (CWD)</th>
+                    <th class="numeric" data-i18n="col_sessions_count">會話數</th>
+                    <th class="numeric" data-i18n="col_total">總計 Token</th>
+                    <th class="numeric" data-i18n="col_cost">估算費用 (美金)</th>
+                  </tr>
+                </thead>
+                <tbody id="weekly-projects-body">
+                  <tr>
+                    <td colspan="5" class="placeholder-text" data-i18n="placeholder_no_projects">本週無任何專案記錄</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="glass-card">
+            <div class="section-header">
+              <h3 style="margin-bottom: 0px;" data-i18n="monthly_models_title">使用的模型佔比</h3>
+            </div>
+            <div class="table-wrapper" style="margin-top: 18px;">
+              <table class="premium-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="col_rank">排名</th>
+                    <th>Model</th>
+                    <th class="numeric" data-i18n="col_sessions_count">會話數</th>
+                    <th class="numeric" data-i18n="col_total">總計 Token</th>
+                    <th class="numeric" data-i18n="col_cost">估算費用 (美金)</th>
+                  </tr>
+                </thead>
+                <tbody id="weekly-models-body">
+                  <tr>
+                    <td colspan="5" class="placeholder-text" data-i18n="placeholder_no_models">本週無模型數據</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </section>
       </div>

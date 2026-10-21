@@ -281,6 +281,11 @@ function getUrlDateForTab(tab) {
   
   if (tab === 'daily') {
     return /^\d{4}-\d{2}-\d{2}$/.test(urlDate) ? urlDate : null;
+  } else if (tab === 'weekly') {
+    if (/^\d{4}-W\d{2}$/.test(urlDate)) {
+      return urlDate;
+    }
+    return null;
   } else if (tab === 'monthly') {
     if (/^\d{4}-\d{2}-\d{2}$/.test(urlDate)) {
       return urlDate.substring(0, 7);
@@ -316,6 +321,11 @@ function updateUrlParams() {
       url.searchParams.set('dir', currentSessionCwdFilter);
     }
     url.searchParams.set('chart', dailyChartMode);
+  } else if (activeTab === 'weekly') {
+    const weekSelect = document.getElementById('week-select');
+    if (weekSelect && weekSelect.value) {
+      url.searchParams.set('date', weekSelect.value);
+    }
   } else if (activeTab === 'monthly') {
     const monthSelect = document.getElementById('month-select');
     if (monthSelect && monthSelect.value) {
@@ -447,18 +457,25 @@ const savedLanguage = localStorage.getItem('lang');
 let languagePreference = localeOptions.includes(savedLanguage) ? savedLanguage : 'auto';
 let currentLang = languagePreference === 'auto' ? detectBrowserLocale() : languagePreference;
 let currentUsageData = null;
+let currentWeeklyData = null;
 let currentMonthlyData = null;
 const modelSessionDetailsCache = new Map();
 const expandedModelDrilldowns = new Map();
 let cachedCodexResets = null;
 let isQueryingCodexResets = false;
 
-// 各報表載入請求的序號：快速切換日期/月份/年份時，僅讓最新一次請求的結果生效
+// 各報表載入請求的序號：快速切換日期/週次/月份/年份時，僅讓最新一次請求的結果生效
 let dailyRequestSeq = 0;
+let weeklyRequestSeq = 0;
 let monthlyRequestSeq = 0;
 let yearlyRequestSeq = 0;
+let weeklyInFlightTarget = null;
 let monthlyInFlightTarget = null;
 let yearlyInFlightTarget = null;
+let currentWeeklyBreakdown = [];
+let weeklyChartInstance = null;
+let weeklyDailySortColumn = 'date';
+let weeklyDailySortDirection = 'asc';
 
 // i18n localization dictionary is now loaded from /static/i18n.js
 
@@ -880,6 +897,7 @@ function initApp() {
 
   // Tab Buttons
   const tabBtnDaily = document.getElementById('tab-btn-daily');
+  const tabBtnWeekly = document.getElementById('tab-btn-weekly');
   const tabBtnMonthly = document.getElementById('tab-btn-monthly');
   const tabBtnYearly = document.getElementById('tab-btn-yearly');
 
@@ -911,47 +929,73 @@ function initApp() {
 
   // Apply initial tab visibility based on restored activeTab
   const dailySelector = document.getElementById('daily-selector-section');
+  const weeklySelector = document.getElementById('weekly-selector-section');
   const monthlySelector = document.getElementById('monthly-selector-section');
   const yearlySelector = document.getElementById('yearly-selector-section');
   const quickStats = document.getElementById('quick-stats-section');
   const dailyView = document.getElementById('daily-view-container');
+  const weeklyView = document.getElementById('weekly-view-container');
   const monthlyView = document.getElementById('monthly-view-container');
   const yearlyView = document.getElementById('yearly-view-container');
 
   if (activeTab === 'daily') {
     tabBtnDaily.classList.add('active');
+    if (tabBtnWeekly) tabBtnWeekly.classList.remove('active');
     tabBtnMonthly.classList.remove('active');
     if (tabBtnYearly) tabBtnYearly.classList.remove('active');
     dailySelector.classList.remove('hidden');
+    if (weeklySelector) weeklySelector.classList.add('hidden');
     monthlySelector.classList.add('hidden');
     if (yearlySelector) yearlySelector.classList.add('hidden');
     if (quickStats) quickStats.classList.remove('hidden');
     
     if (dailyView) dailyView.classList.remove('hidden');
+    if (weeklyView) weeklyView.classList.add('hidden');
+    if (monthlyView) monthlyView.classList.add('hidden');
+    if (yearlyView) yearlyView.classList.add('hidden');
+  } else if (activeTab === 'weekly') {
+    tabBtnDaily.classList.remove('active');
+    if (tabBtnWeekly) tabBtnWeekly.classList.add('active');
+    tabBtnMonthly.classList.remove('active');
+    if (tabBtnYearly) tabBtnYearly.classList.remove('active');
+    dailySelector.classList.add('hidden');
+    if (weeklySelector) weeklySelector.classList.remove('hidden');
+    monthlySelector.classList.add('hidden');
+    if (yearlySelector) yearlySelector.classList.add('hidden');
+    if (quickStats) quickStats.classList.add('hidden');
+    
+    if (dailyView) dailyView.classList.add('hidden');
+    if (weeklyView) weeklyView.classList.remove('hidden');
     if (monthlyView) monthlyView.classList.add('hidden');
     if (yearlyView) yearlyView.classList.add('hidden');
   } else if (activeTab === 'monthly') {
     tabBtnDaily.classList.remove('active');
+    if (tabBtnWeekly) tabBtnWeekly.classList.remove('active');
     tabBtnMonthly.classList.add('active');
     if (tabBtnYearly) tabBtnYearly.classList.remove('active');
     dailySelector.classList.add('hidden');
+    if (weeklySelector) weeklySelector.classList.add('hidden');
     monthlySelector.classList.remove('hidden');
     if (yearlySelector) yearlySelector.classList.add('hidden');
     if (quickStats) quickStats.classList.add('hidden');
     
     if (dailyView) dailyView.classList.add('hidden');
+    if (weeklyView) weeklyView.classList.add('hidden');
     if (monthlyView) monthlyView.classList.remove('hidden');
     if (yearlyView) yearlyView.classList.add('hidden');
   } else if (activeTab === 'yearly') {
     tabBtnDaily.classList.remove('active');
+    if (tabBtnWeekly) tabBtnWeekly.classList.remove('active');
     tabBtnMonthly.classList.remove('active');
     if (tabBtnYearly) tabBtnYearly.classList.add('active');
     dailySelector.classList.add('hidden');
+    if (weeklySelector) weeklySelector.classList.add('hidden');
     monthlySelector.classList.add('hidden');
     if (yearlySelector) yearlySelector.classList.remove('hidden');
     if (quickStats) quickStats.classList.add('hidden');
     
     if (dailyView) dailyView.classList.add('hidden');
+    if (weeklyView) weeklyView.classList.add('hidden');
     if (monthlyView) monthlyView.classList.add('hidden');
     if (yearlyView) yearlyView.classList.remove('hidden');
   }
@@ -1088,6 +1132,7 @@ function initApp() {
 
   // Tab切換監聽
   tabBtnDaily.addEventListener('click', () => switchTab('daily'));
+  if (tabBtnWeekly) tabBtnWeekly.addEventListener('click', () => switchTab('weekly'));
   tabBtnMonthly.addEventListener('click', () => switchTab('monthly'));
   tabBtnYearly.addEventListener('click', () => switchTab('yearly'));
 
@@ -1143,6 +1188,63 @@ function initApp() {
       }
       await loadUsageData(todayStr);
       showNotification(`${t('today_btn')} ${todayStr}`, 'success');
+    });
+  }
+
+  // 監聽週次切換
+  const weekSelect = document.getElementById('week-select');
+  if (weekSelect) {
+    weekSelect.addEventListener('change', (e) => {
+      if (e.target.value) {
+        loadWeeklyData(e.target.value);
+      }
+    });
+  }
+
+  const adjustWeek = async (offset) => {
+    if (!weekSelect || !weekSelect.options.length) return;
+    const currentIndex = weekSelect.selectedIndex;
+    if (currentIndex < 0) return;
+    const targetIndex = currentIndex - offset;
+    if (targetIndex >= 0 && targetIndex < weekSelect.options.length) {
+      weekSelect.selectedIndex = targetIndex;
+      await loadWeeklyData(weekSelect.value);
+    }
+  };
+
+  const btnPrevWeek = document.getElementById('btn-prev-week');
+  if (btnPrevWeek) {
+    btnPrevWeek.addEventListener('click', () => adjustWeek(-1));
+  }
+
+  const btnNextWeek = document.getElementById('btn-next-week');
+  if (btnNextWeek) {
+    btnNextWeek.addEventListener('click', () => adjustWeek(1));
+  }
+
+  const btnThisWeek = document.getElementById('btn-this-week');
+  if (btnThisWeek) {
+    btnThisWeek.addEventListener('click', async () => {
+      if (!weekSelect || !weekSelect.options.length) return;
+      weekSelect.selectedIndex = 0;
+      await loadWeeklyData(weekSelect.value);
+      showNotification(`${t('this_week_btn')} ${weekSelect.value}`, 'success');
+    });
+  }
+
+  const btnReloadWeekly = document.getElementById('btn-reload-weekly');
+  if (btnReloadWeekly) {
+    btnReloadWeekly.addEventListener('click', async () => {
+      btnReloadWeekly.classList.add('loading');
+      try {
+        await reloadWeeklyData();
+        showNotification(t('reload_success'), 'success');
+      } catch (err) {
+        console.error('Reload failed:', err);
+        showNotification(t('reload_failed'), 'error');
+      } finally {
+        btnReloadWeekly.classList.remove('loading');
+      }
     });
   }
 
@@ -1624,18 +1726,22 @@ function switchTab(tab, options = {}) {
   }
 
   const tabBtnDaily = document.getElementById('tab-btn-daily');
+  const tabBtnWeekly = document.getElementById('tab-btn-weekly');
   const tabBtnMonthly = document.getElementById('tab-btn-monthly');
   const tabBtnYearly = document.getElementById('tab-btn-yearly');
   const dailySelector = document.getElementById('daily-selector-section');
+  const weeklySelector = document.getElementById('weekly-selector-section');
   const monthlySelector = document.getElementById('monthly-selector-section');
   const yearlySelector = document.getElementById('yearly-selector-section');
   const quickStats = document.getElementById('quick-stats-section');
   const dailyView = document.getElementById('daily-view-container');
+  const weeklyView = document.getElementById('weekly-view-container');
   const monthlyView = document.getElementById('monthly-view-container');
   const yearlyView = document.getElementById('yearly-view-container');
 
   const updateVisibility = (activeView) => {
     dailyView.classList.add('hidden');
+    if (weeklyView) weeklyView.classList.add('hidden');
     monthlyView.classList.add('hidden');
     yearlyView.classList.add('hidden');
     const emptyContainer = document.getElementById('empty-state-container');
@@ -1651,9 +1757,11 @@ function switchTab(tab, options = {}) {
 
   if (tab === 'daily') {
     tabBtnDaily.classList.add('active');
+    if (tabBtnWeekly) tabBtnWeekly.classList.remove('active');
     tabBtnMonthly.classList.remove('active');
     if (tabBtnYearly) tabBtnYearly.classList.remove('active');
     dailySelector.classList.remove('hidden');
+    if (weeklySelector) weeklySelector.classList.add('hidden');
     monthlySelector.classList.add('hidden');
     if (yearlySelector) yearlySelector.classList.add('hidden');
     quickStats.classList.remove('hidden');
@@ -1670,6 +1778,34 @@ function switchTab(tab, options = {}) {
     } else if (availableDates.length === 0) {
       toggleEmptyState(true, currentAssistant);
     }
+  } else if (tab === 'weekly') {
+    // 關閉即時自動刷新以節省資源
+    const liveToggle = document.getElementById('live-toggle');
+    if (liveToggle && liveToggle.checked) {
+      liveToggle.checked = false;
+      toggleLiveRefresh(false);
+      setCookie('live_refresh', 'false');
+    }
+
+    tabBtnDaily.classList.remove('active');
+    if (tabBtnWeekly) tabBtnWeekly.classList.add('active');
+    tabBtnMonthly.classList.remove('active');
+    if (tabBtnYearly) tabBtnYearly.classList.remove('active');
+    dailySelector.classList.add('hidden');
+    if (weeklySelector) weeklySelector.classList.remove('hidden');
+    monthlySelector.classList.add('hidden');
+    if (yearlySelector) yearlySelector.classList.add('hidden');
+    quickStats.classList.add('hidden');
+    
+    updateVisibility(weeklyView);
+
+    // 載入當前週次的數據
+    const weekSelect = document.getElementById('week-select');
+    if (weekSelect && weekSelect.value) {
+      loadWeeklyData(weekSelect.value);
+    } else {
+      fetchWeeks();
+    }
   } else if (tab === 'monthly') {
     // 關閉即時自動刷新以節省資源
     const liveToggle = document.getElementById('live-toggle');
@@ -1680,9 +1816,11 @@ function switchTab(tab, options = {}) {
     }
 
     tabBtnDaily.classList.remove('active');
+    if (tabBtnWeekly) tabBtnWeekly.classList.remove('active');
     tabBtnMonthly.classList.add('active');
     if (tabBtnYearly) tabBtnYearly.classList.remove('active');
     dailySelector.classList.add('hidden');
+    if (weeklySelector) weeklySelector.classList.add('hidden');
     monthlySelector.classList.remove('hidden');
     if (yearlySelector) yearlySelector.classList.add('hidden');
     quickStats.classList.add('hidden');
@@ -1706,9 +1844,11 @@ function switchTab(tab, options = {}) {
     }
 
     tabBtnDaily.classList.remove('active');
+    if (tabBtnWeekly) tabBtnWeekly.classList.remove('active');
     tabBtnMonthly.classList.remove('active');
     if (tabBtnYearly) tabBtnYearly.classList.add('active');
     dailySelector.classList.add('hidden');
+    if (weeklySelector) weeklySelector.classList.add('hidden');
     monthlySelector.classList.add('hidden');
     if (yearlySelector) yearlySelector.classList.remove('hidden');
     quickStats.classList.add('hidden');
@@ -2001,7 +2141,10 @@ async function loadUsageData(date, assistant = currentAssistant) {
 }
 
 function getCurrentUsagePeriod() {
-  if (activeTab === 'monthly') {
+  if (activeTab === 'weekly') {
+    const weekSelect = document.getElementById('week-select');
+    if (weekSelect?.value) return { value: weekSelect.value, scope: 'week' };
+  } else if (activeTab === 'monthly') {
     const monthSelect = document.getElementById('month-select');
     if (monthSelect?.value) return { value: monthSelect.value, scope: 'month' };
   } else if (activeTab === 'yearly') {
@@ -2703,7 +2846,7 @@ function renderMonthlyMetricValue(elementId, getValFn, formatFn, agentBreakdown,
 // =========================================================================
 const AGENT_TREND_METRIC_STORAGE_KEY = 'agent_trend_metric';
 const AGENT_TREND_METRICS = ['cost', 'tokens'];
-const AGENT_SHARE_VIEWS = ['daily', 'monthly', 'yearly'];
+const AGENT_SHARE_VIEWS = ['daily', 'weekly', 'monthly', 'yearly'];
 const AGENT_FALLBACK_COLOR = '#94a3b8';
 const agentTrendCharts = new Map();
 const agentTrendBreakdowns = new Map();
@@ -2958,8 +3101,8 @@ function initAgentShareControls() {
 }
 
 function renderAgentTrendChart(viewKey, breakdown) {
-  const isMonthly = viewKey === 'monthly';
-  const labelKey = isMonthly ? 'date' : 'month';
+  const isDailyOrWeeklyOrMonthly = viewKey === 'daily' || viewKey === 'weekly' || viewKey === 'monthly';
+  const labelKey = viewKey === 'yearly' ? 'month' : 'date';
   // 同一份 breakdown 陣列會被月／年彙總表原地排序，因此保存副本並自行依時間升冪排列
   const buckets = (Array.isArray(breakdown) ? [...breakdown] : [])
     .sort((left, right) => String(left[labelKey] || '').localeCompare(String(right[labelKey] || '')));
@@ -3000,7 +3143,7 @@ function renderAgentTrendChart(viewKey, breakdown) {
     };
   });
   const labels = buckets.map(bucket => (
-    isMonthly ? String(bucket.date || '').substring(5) : String(bucket.month || '')
+    isDailyOrWeeklyOrMonthly ? String(bucket.date || '').substring(5) : String(bucket.month || '')
   ));
 
   agentTrendCharts.get(viewKey)?.destroy();
@@ -4170,6 +4313,15 @@ function initTableSorting() {
           yearlyMonthlySortDirection = 'desc'; // 預設降冪排序
         }
         sortAndRenderYearlyMonthlyTable();
+      } else if (tableType === 'weekly') {
+        // 週度每日彙總表格排序
+        if (weeklyDailySortColumn === column) {
+          weeklyDailySortDirection = weeklyDailySortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+          weeklyDailySortColumn = column;
+          weeklyDailySortDirection = 'desc'; // 預設降冪排序
+        }
+        sortAndRenderWeeklyDailyTable();
       } else if (tableType === 'monthly') {
         // 月度每日彙總表格排序
         if (monthlyDailySortColumn === column) {
@@ -5512,6 +5664,468 @@ function escapeHtml(unsafe) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+// =========================================================================
+// API 呼叫: 載入週次清單
+// =========================================================================
+async function fetchWeeks(selectedWeek = null, assistant = currentAssistant, keepWeek = false) {
+  try {
+    const resolvedAssistant = normalizeAssistant(assistant);
+    const res = await fetch(`/api/${resolvedAssistant}/weeks`);
+    const data = await res.json();
+
+    if (currentAssistant !== resolvedAssistant) return;
+
+    const weekSelect = document.getElementById('week-select');
+    if (!weekSelect) return;
+
+    const currentWeekVal = /^\d{4}-W\d{2}$/.test(weekSelect.value) ? weekSelect.value : null;
+    const urlWeek = getUrlDateForTab('weekly');
+    const targetWeek = selectedWeek || (keepWeek ? (currentWeekVal || urlWeek) : (urlWeek || currentWeekVal));
+
+    weekSelect.innerHTML = '';
+
+    if (!data.weeks || data.weeks.length === 0) {
+      weekSelect.innerHTML = `<option value="" disabled selected>${t('no_week_logs')}</option>`;
+      if (activeTab === 'weekly') {
+        currentWeeklyData = null;
+        toggleEmptyState(true, resolvedAssistant);
+      }
+      return;
+    }
+
+    const availableWeeks = [...data.weeks];
+    let weekToLoad = availableWeeks[0].week;
+    let hasSelected = false;
+
+    availableWeeks.forEach((item) => {
+      const opt = document.createElement('option');
+      opt.value = item.week;
+      opt.textContent = item.label || item.week;
+      if (targetWeek && item.week === targetWeek) {
+        opt.selected = true;
+        weekToLoad = item.week;
+        hasSelected = true;
+      }
+      weekSelect.appendChild(opt);
+    });
+
+    if (!hasSelected && weekSelect.options.length > 0) {
+      weekSelect.options[0].selected = true;
+      weekToLoad = weekSelect.options[0].value;
+    }
+
+    if (activeTab === 'weekly') {
+      await loadWeeklyData(weekToLoad, resolvedAssistant);
+    }
+  } catch (err) {
+    console.error('獲取週次清單失敗:', err);
+    showNotification(t('load_failed'), 'error');
+  }
+}
+
+async function reloadWeeklyData() {
+  const weekSelect = document.getElementById('week-select');
+  if (weekSelect) {
+    const selectedWeek = weekSelect.value;
+    await fetchWeeks(selectedWeek);
+  }
+}
+
+// =========================================================================
+// API 呼叫: 載入單週彙整數據
+// =========================================================================
+async function loadWeeklyData(week, assistant = currentAssistant) {
+  if (!week || week === 'undefined' || week === 'null') {
+    return;
+  }
+  const resolvedAssistant = normalizeAssistant(assistant);
+  updateUrlParams();
+  const mySeq = ++weeklyRequestSeq;
+  const dimView = !currentWeeklyData || currentWeeklyData.year_week !== week;
+  weeklyInFlightTarget = week;
+  showViewLoading(dimView);
+  try {
+    setTitleMarkup('sync', week);
+
+    const res = await fetch(`/api/${resolvedAssistant}/weekly/${week}`);
+    if (mySeq !== weeklyRequestSeq) return;
+    if (currentAssistant !== resolvedAssistant) return;
+    if (res.status === 404) {
+      showNoDataForWeek(week, resolvedAssistant);
+      return;
+    }
+
+    const data = await res.json();
+    if (mySeq !== weeklyRequestSeq) return;
+    if (currentAssistant !== resolvedAssistant) return;
+    toggleEmptyState(false, resolvedAssistant);
+    renderWeeklyDashboard(data);
+  } catch (err) {
+    console.error('載入週度彙整失敗:', err);
+    if (mySeq === weeklyRequestSeq) showNotification(t('weekly_load_failed'), 'error');
+  } finally {
+    if (mySeq === weeklyRequestSeq) {
+      weeklyInFlightTarget = null;
+      hideViewLoading();
+      clearTitleSpinner();
+    }
+  }
+}
+
+function showNoDataForWeek(week, assistant) {
+  currentWeeklyData = null;
+  currentWeeklyBreakdown = [];
+  setTitleMarkup('calendar', week);
+
+  ['weekly-stat-total-tokens', 'weekly-stat-input-tokens', 'weekly-stat-cache-input-tokens', 'weekly-stat-output-tokens'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = '0';
+  });
+  const costEl = document.getElementById('weekly-stat-total-cost');
+  if (costEl) costEl.textContent = '$0.00';
+  const sessionsEl = document.getElementById('weekly-chart-total-sessions');
+  if (sessionsEl) sessionsEl.textContent = '0';
+
+  if (weeklyChartInstance) {
+    weeklyChartInstance.destroy();
+    weeklyChartInstance = null;
+  }
+  agentTrendCharts.get('weekly')?.destroy();
+
+  const dailyBody = document.getElementById('weekly-daily-summary-body');
+  if (dailyBody) {
+    dailyBody.innerHTML = `<tr><td colspan="7" class="placeholder-text">${escapeHtml(t('no_week_logs'))}</td></tr>`;
+  }
+  const projBody = document.getElementById('weekly-projects-body');
+  if (projBody) {
+    projBody.innerHTML = `<tr><td colspan="5" class="placeholder-text">${escapeHtml(t('placeholder_no_projects'))}</td></tr>`;
+  }
+  const modelBody = document.getElementById('weekly-models-body');
+  if (modelBody) {
+    modelBody.innerHTML = `<tr><td colspan="5" class="placeholder-text">${escapeHtml(t('placeholder_no_models'))}</td></tr>`;
+  }
+}
+
+// =========================================================================
+// 渲染週報看板數據
+// =========================================================================
+function renderWeeklyDashboard(data) {
+  currentWeeklyData = data;
+  const { year_week, summary, daily_breakdown, models, projects, agent_breakdown } = data;
+
+  // 1. 更新標題
+  setTitleMarkup('calendar', year_week);
+
+  // 2. 更新指標卡片
+  const activeAgents = getActiveAgents();
+  const isMulti = activeAgents.length > 1;
+  const weeklyInputTokens = summary.total_input_tokens || 0;
+
+  if (!isMulti) {
+    document.getElementById('weekly-stat-total-tokens').textContent = formatToken(summary.total_tokens);
+    document.getElementById('weekly-stat-input-tokens').textContent = formatToken(weeklyInputTokens);
+    document.getElementById('weekly-stat-cache-input-tokens').textContent = formatToken(summary.total_cache_read_tokens || 0);
+    document.getElementById('weekly-stat-output-tokens').textContent = formatToken(summary.total_output_tokens);
+    document.getElementById('weekly-stat-total-cost').textContent = formatCost(summary.total_cost_usd || 0);
+  } else {
+    renderMonthlyMetricValue('weekly-stat-total-tokens', a => a.total_tokens, formatToken, agent_breakdown, activeAgents);
+    renderMonthlyMetricValue('weekly-stat-input-tokens', a => a.total_input_tokens || 0, formatToken, agent_breakdown, activeAgents);
+    renderMonthlyMetricValue('weekly-stat-cache-input-tokens', a => a.total_cache_read_tokens || 0, formatToken, agent_breakdown, activeAgents);
+    renderMonthlyMetricValue('weekly-stat-output-tokens', a => a.total_output_tokens, formatToken, agent_breakdown, activeAgents);
+    renderMonthlyMetricValue('weekly-stat-total-cost', a => a.total_cost_usd, formatCost, agent_breakdown, activeAgents);
+  }
+
+  const statInputPct = document.getElementById('weekly-stat-input-pct');
+  const statCacheInputPct = document.getElementById('weekly-stat-cache-input-pct');
+  const statOutputPct = document.getElementById('weekly-stat-output-pct');
+  const chartTotalSessions = document.getElementById('weekly-chart-total-sessions');
+
+  if (chartTotalSessions) {
+    chartTotalSessions.textContent = formatNumber(summary.total_sessions || 0);
+  }
+
+  if (isMulti) {
+    if (statInputPct) statInputPct.classList.add('hidden');
+    if (statCacheInputPct) statCacheInputPct.classList.add('hidden');
+    if (statOutputPct) statOutputPct.classList.add('hidden');
+  } else {
+    if (statInputPct) {
+      statInputPct.classList.remove('hidden');
+      statInputPct.textContent = `${t('ratio_label')}: ${calculatePercentage(weeklyInputTokens, summary.total_tokens)}`;
+    }
+    if (statCacheInputPct) {
+      statCacheInputPct.classList.remove('hidden');
+      statCacheInputPct.textContent = `${t('ratio_label')}: ${calculatePercentage(summary.total_cache_read_tokens, summary.total_tokens)}`;
+    }
+    if (statOutputPct) {
+      statOutputPct.classList.remove('hidden');
+      statOutputPct.textContent = `${t('ratio_label')}: ${calculatePercentage(summary.total_output_tokens, summary.total_tokens)}`;
+    }
+  }
+
+  // 3. 繪製單週每日趨勢圖
+  renderWeeklyChart(daily_breakdown);
+
+  // 3-1. 合併全部 Agent 時的用量分佈與依 Agent 堆疊的每日趨勢
+  renderAgentShareSection('weekly', buildAgentShareRowsFromBreakdown(agent_breakdown));
+  renderAgentTrendChart('weekly', daily_breakdown);
+
+  // 4. 渲染最常活動專案列表
+  renderWeeklyProjectsTable(projects);
+
+  // 5. 渲染模型佔比列表
+  renderWeeklyModelsTable(models, year_week);
+
+  // 6. 渲染當週每日彙總列表
+  weeklyDailySortColumn = 'date';
+  weeklyDailySortDirection = 'asc';
+  sortAndRenderWeeklyDailyTable();
+}
+
+function renderWeeklyChart(dailyBreakdown) {
+  currentWeeklyBreakdown = dailyBreakdown;
+  const canvas = document.getElementById('weeklyTokenChart');
+  if (!canvas) return;
+
+  const labels = dailyBreakdown.map(entry => entry.date.substring(5)); // 只顯示 MM-DD
+  const tokenData = dailyBreakdown.map(entry => entry.total_tokens);
+  const cacheData = dailyBreakdown.map(entry => entry.total_cache_read_tokens || 0);
+  const sessionData = dailyBreakdown.map(entry => entry.sessions_count);
+
+  if (weeklyChartInstance) {
+    weeklyChartInstance.data.labels = labels;
+    weeklyChartInstance.data.datasets[0].label = t('chart_monthly_token_label');
+    weeklyChartInstance.data.datasets[1].label = t('chart_cache_label');
+    weeklyChartInstance.data.datasets[2].label = t('chart_monthly_session_label');
+    weeklyChartInstance.data.datasets[0].data = tokenData;
+    weeklyChartInstance.data.datasets[1].data = cacheData;
+    weeklyChartInstance.data.datasets[2].data = sessionData;
+    if (weeklyChartInstance.options.scales?.y?.title) {
+      weeklyChartInstance.options.scales.y.title.text = t('col_total');
+    }
+    if (weeklyChartInstance.options.scales?.y1?.title) {
+      weeklyChartInstance.options.scales.y1.title.text = t('col_sessions_count');
+    }
+    weeklyChartInstance.update();
+    return;
+  }
+
+  weeklyChartInstance = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: t('chart_monthly_token_label'),
+          data: tokenData,
+          backgroundColor: chartPalette.tokenFill,
+          borderColor: chartPalette.tokenStroke,
+          borderWidth: 1.5,
+          borderRadius: 6,
+          yAxisID: 'y',
+          grouped: false,
+          barPercentage: 0.8,
+        },
+        {
+          label: t('chart_cache_label'),
+          data: cacheData,
+          backgroundColor: chartPalette.cacheFill,
+          borderColor: chartPalette.cacheStroke,
+          borderWidth: 1.5,
+          borderRadius: 6,
+          yAxisID: 'y',
+          grouped: false,
+          barPercentage: 0.8,
+        },
+        {
+          label: t('chart_monthly_session_label'),
+          data: sessionData,
+          type: 'line',
+          borderColor: chartPalette.sessionLine,
+          backgroundColor: chartPalette.sessionFill,
+          borderWidth: 2,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          pointBackgroundColor: chartPalette.sessionLine,
+          yAxisID: 'y1',
+          tension: 0.2,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        mode: 'index',
+        intersect: false,
+      },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top',
+          labels: {
+            color: '#9ca3af',
+            font: { family: 'var(--font-mono)' },
+            usePointStyle: true,
+            pointStyle: 'circle',
+          }
+        },
+        tooltip: {
+          backgroundColor: 'rgba(15, 23, 42, 0.9)',
+          titleColor: '#f3f4f6',
+          bodyColor: '#e5e7eb',
+          borderColor: 'rgba(255, 255, 255, 0.1)',
+          borderWidth: 1,
+          padding: 12,
+          boxPadding: 6,
+          usePointStyle: true,
+          callbacks: {
+            label: function(context) {
+              let label = context.dataset.label || '';
+              if (label) label += ': ';
+              if (context.dataset.yAxisID === 'y1') {
+                label += formatNumber(context.parsed.y) + ' ' + t('sessions_unit');
+              } else {
+                label += formatToken(context.parsed.y);
+              }
+              return label;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: 'rgba(255, 255, 255, 0.05)' },
+          ticks: {
+            color: '#9ca3af',
+            font: { family: 'var(--font-mono)', size: 11 }
+          }
+        },
+        y: {
+          type: 'linear',
+          display: true,
+          position: 'left',
+          grid: { color: 'rgba(255, 255, 255, 0.05)' },
+          ticks: {
+            color: '#9ca3af',
+            font: { family: 'var(--font-mono)', size: 11 },
+            callback: value => formatToken(value)
+          },
+          title: {
+            display: true,
+            text: t('col_total'),
+            color: '#9ca3af'
+          }
+        },
+        y1: {
+          type: 'linear',
+          display: true,
+          position: 'right',
+          grid: { drawOnChartArea: false },
+          ticks: {
+            color: '#9ca3af',
+            font: { family: 'var(--font-mono)', size: 11 },
+            stepSize: 1
+          },
+          title: {
+            display: true,
+            text: t('col_sessions_count'),
+            color: '#9ca3af'
+          }
+        }
+      }
+    }
+  });
+}
+
+function sortAndRenderWeeklyDailyTable() {
+  const tbody = document.getElementById('weekly-daily-summary-body');
+  if (!tbody || !currentWeeklyBreakdown || currentWeeklyBreakdown.length === 0) return;
+
+  const sortedData = [...currentWeeklyBreakdown].sort((a, b) => {
+    let valA = a[weeklyDailySortColumn];
+    let valB = b[weeklyDailySortColumn];
+
+    if (weeklyDailySortColumn === 'cost') {
+      valA = a.cost_usd || 0;
+      valB = b.cost_usd || 0;
+    } else if (weeklyDailySortColumn === 'input') {
+      valA = a.total_input_tokens || 0;
+      valB = b.total_input_tokens || 0;
+    } else if (weeklyDailySortColumn === 'output') {
+      valA = a.total_output_tokens || 0;
+      valB = b.total_output_tokens || 0;
+    } else if (weeklyDailySortColumn === 'cache') {
+      valA = a.total_cache_read_tokens || 0;
+      valB = b.total_cache_read_tokens || 0;
+    } else if (weeklyDailySortColumn === 'reasoning') {
+      valA = a.total_reasoning_tokens || 0;
+      valB = b.total_reasoning_tokens || 0;
+    } else if (weeklyDailySortColumn === 'total') {
+      valA = a.total_tokens || 0;
+      valB = b.total_tokens || 0;
+    }
+
+    if (valA < valB) return weeklyDailySortDirection === 'asc' ? -1 : 1;
+    if (valA > valB) return weeklyDailySortDirection === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  updateTableSortIcons('weekly', weeklyDailySortColumn, weeklyDailySortDirection);
+
+  tbody.innerHTML = sortedData.map(entry => `
+    <tr>
+      <td>${entry.date}</td>
+      <td class="numeric">${formatToken(entry.total_input_tokens)}</td>
+      <td class="numeric">${formatToken(entry.total_output_tokens)}</td>
+      <td class="numeric">${formatToken(entry.total_reasoning_tokens)}</td>
+      <td class="numeric">${formatToken(entry.total_cache_read_tokens)}</td>
+      <td class="numeric">${formatToken(entry.total_tokens)}</td>
+      <td class="numeric">${formatCost(entry.cost_usd)}</td>
+    </tr>
+  `).join('');
+}
+
+function renderWeeklyProjectsTable(projects) {
+  const tbody = document.getElementById('weekly-projects-body');
+  if (!tbody) return;
+
+  if (!projects || projects.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5" class="placeholder-text">${escapeHtml(t('placeholder_no_projects'))}</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = projects.map((proj, idx) => `
+    <tr>
+      <td class="rank-badge-cell">${idx + 1}</td>
+      <td class="session-cwd-column" title="${escapeHtml(proj.cwd || '')}">${escapeHtml(proj.cwd || 'Unknown')}</td>
+      <td class="numeric">${formatNumber(proj.sessions_count)}</td>
+      <td class="numeric">${formatToken(proj.total_tokens)}</td>
+      <td class="numeric">${formatCost(proj.total_cost_usd)}</td>
+    </tr>
+  `).join('');
+}
+
+function renderWeeklyModelsTable(models) {
+  const tbody = document.getElementById('weekly-models-body');
+  if (!tbody) return;
+
+  if (!models || models.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5" class="placeholder-text">${escapeHtml(t('placeholder_no_models'))}</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = models.map((model, idx) => `
+    <tr>
+      <td class="rank-badge-cell">${idx + 1}</td>
+      <td>${escapeHtml(model.model_name)}</td>
+      <td class="numeric">${formatNumber(model.sessions_count)}</td>
+      <td class="numeric">${formatToken(model.total_tokens)}</td>
+      <td class="numeric">${formatCost(model.total_cost_usd)}</td>
+    </tr>
+  `).join('');
 }
 
 // =========================================================================

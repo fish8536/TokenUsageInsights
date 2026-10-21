@@ -357,7 +357,7 @@ fn run_export(args: &[String]) -> i32 {
     }
 
     if !is_valid_period(&date) {
-        eprintln!("資料範圍格式不正確，請使用 YYYY、YYYY-MM 或 YYYY-MM-DD");
+        eprintln!("資料範圍格式不正確，請使用 YYYY、YYYY-MM、YYYY-Www 或 YYYY-MM-DD");
         return 2;
     }
 
@@ -764,6 +764,7 @@ fn is_valid_period(period: &str) -> bool {
                     .parse::<i32>()
                     .is_ok_and(|month| (1..=12).contains(&month))
         }
+        8 => crate::db::parse_iso_week_range(period).is_some(),
         10 => is_valid_date(period),
         _ => false,
     }
@@ -776,11 +777,11 @@ fn print_help() {
 fn print_export_help() {
     println!(
         r#"export usage:
-  token-usage-insights export --agent <name> --date YYYY[-MM[-DD]] --out <path>
+  token-usage-insights export --agent <name> --date YYYY[-MM[-DD]]|YYYY-Www --out <path>
 
 參數:
-  --agent <name>    助理名稱（antigravity/copilot/codex/claude/cursor/grok/pi/omp/muse/mcode）
-  --date <period>     匯出年份、月份或日期
+  --agent <name>    助理名稱（antigravity/copilot/codex/claude/cursor/gemini/grok/pi/omp/muse/mcode）
+  --date <period>     匯出年份、月份、週次或日期（如 2026、2026-10、2026-W42、2026-10-13）
   --out <path>      輸出檔案路徑，不指定則輸出到 stdout
   --help, -h        顯示此說明
 "#
@@ -926,6 +927,21 @@ mod tests {
             .unwrap()
             .into_imports(None)
             .is_err());
+    }
+
+    #[test]
+    fn is_valid_period_supports_year_month_week_and_day() {
+        assert!(super::is_valid_period("2026"));
+        assert!(super::is_valid_period("2026-10"));
+        assert!(super::is_valid_period("2026-W42"));
+        assert!(super::is_valid_period("2026-W01"));
+        assert!(super::is_valid_period("2026-10-13"));
+
+        assert!(!super::is_valid_period("2026-W00"));
+        assert!(!super::is_valid_period("2026-W54"));
+        assert!(!super::is_valid_period("2026-13"));
+        assert!(!super::is_valid_period("2026-10-32"));
+        assert!(!super::is_valid_period("invalid"));
     }
 
     #[test]

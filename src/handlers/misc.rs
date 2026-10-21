@@ -180,6 +180,7 @@ fn is_valid_period(period: &str) -> bool {
                     .parse::<i32>()
                     .is_ok_and(|month| (1..=12).contains(&month))
         }
+        8 => crate::db::parse_iso_week_range(period).is_some(),
         10 => is_valid_date(period),
         _ => false,
     }
@@ -233,7 +234,7 @@ pub async fn export_usage_day(
     if !is_valid_period(&date) {
         return (
             StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "資料範圍格式不正確，請使用 YYYY、YYYY-MM 或 YYYY-MM-DD" })),
+            Json(serde_json::json!({ "error": "資料範圍格式不正確，請使用 YYYY、YYYY-MM、YYYY-Www 或 YYYY-MM-DD" })),
         )
             .into_response();
     }
