@@ -4,6 +4,21 @@
 
 ## [未發行]
 
+## [1.6.1] - 2026-10-21
+
+### 新增與改善
+
+- 新增以「週」為時間尺度的 Token 用量計算與看板檢視：
+  - 資料庫層實作 ISO 8601 週次起訖推導（`parse_iso_week_range`）、可用週次查詢（`get_available_weeks`）與區間資料查詢（`get_usage_entries_by_date_range`）。
+  - 新增後端路由模組 `src/handlers/weekly.rs`，提供 `/api/:assistant/weeks` 與 `/api/:assistant/weekly/:year_week` 端點。
+  - CLI 匯出與驗證支援 `--date YYYY-Www`（例如 `2026-W42`）週次時間範圍。
+  - 前端新增獨立「週度」頁籤，提供週下拉選單、前後週切換、核心統計卡片、當週 7 天每日趨勢圖與 Agent 堆疊長條圖。
+  - 支援當週每日明細表（含欄位點擊排序）、最常活動專案與模型佔比分佈，並補齊 5 國語言 i18n 翻譯。
+
+### 相容性
+
+- 新增 `/api/:assistant/weeks` 與 `/api/:assistant/weekly/:year_week` API 端點；既有 API、資料庫結構、環境變數與安裝流程維持完全向後相容。
+
 ## [1.6.0] - 2026-10-21
 
 ### 新增與改善
