@@ -5438,6 +5438,7 @@ pub(crate) fn sync_muse_usage_logs_with_cancel(
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 pub(crate) fn sync_gemini_usage_logs(
     conn: &mut Connection,
     gemini_dir: &Path,

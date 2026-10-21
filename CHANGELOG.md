@@ -2,6 +2,26 @@
 
 本文件記錄 TokenUsageInsights 各正式版本的實際變更。內容依 Git 標籤間的提交記錄與檔案差異整理，格式參考 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)，版本編號遵循 [Semantic Versioning](https://semver.org/lang/zh-TW/)。
 
+## [未發行]
+
+## [1.4.0] - 2026-10-21
+
+### 新增與改善
+
+- 新增 Google Gemini CLI（`gemini`）會話用量計算與時間軸支援：
+  - 自動掃描 `~/.gemini/tmp/*/chats/session-*.jsonl` 會話日誌，並可透過 `GEMINI_DIR` 環境變數自訂目錄。
+  - 支援透過 `.project_root` 自動還原會話所屬的工作目錄（`cwd`）。
+  - 精確拆解 Token 指標：未快取輸入（Prompt 扣除 Cache）、快取讀取、思考與推理（Thoughts）及輸出 Token。
+  - 針對同一 Turn 串流與工具呼叫多次寫入同 ID 紀錄進行有序去重，保留最新狀態。
+  - CLI 新增 `--agent gemini` 參數，並支援 `gemini-cli`、`gemini_cli`、`geminicli` 別名自動正規化。
+  - 實作會話路徑校驗與時間軸還原，完整呈現使用者提問、模型思考、工具步驟與回覆。
+  - 前端看板新增 Gemini CLI 專屬標籤按鈕、Logo 圖標、設定指南 Modal 與 5 國語言 i18n 翻譯，首頁與文件更新為支援 11 種 AI Coding Agent 來源。
+  - 補齊側邊欄 Agent 類型按鈕群（`#assistant-badges-container`）與匯入對話框（`#usage-import-target-assistant`）中的 Gemini CLI 選項。
+
+### 相容性
+
+- 未變更既有資料庫結構、API、環境變數或安裝流程。
+
 ## [1.3.2] - 2026-10-15
 
 ### 新增與改善
@@ -959,7 +979,20 @@
 - 修正行動版側邊欄遮擋、黑畫面、標題擠壓、圖表導覽索引與年度版面問題。
 - 修正並補齊多個 Gemini、Claude、GPT 與 GPT-OSS 模型的定價規則。
 
-[未發行]: https://github.com/doggy8088/TokenUsageInsights/compare/v1.1.0...HEAD
+[未發行]: https://github.com/doggy8088/TokenUsageInsights/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/doggy8088/TokenUsageInsights/compare/v1.3.2...v1.4.0
+[1.3.2]: https://github.com/doggy8088/TokenUsageInsights/compare/v1.3.1...v1.3.2
+[1.3.1]: https://github.com/doggy8088/TokenUsageInsights/compare/v1.3.0...v1.3.1
+[1.3.0]: https://github.com/doggy8088/TokenUsageInsights/compare/v1.2.2...v1.3.0
+[1.2.2]: https://github.com/doggy8088/TokenUsageInsights/compare/v1.2.1...v1.2.2
+[1.2.1]: https://github.com/doggy8088/TokenUsageInsights/compare/v1.2.0...v1.2.1
+[1.2.0]: https://github.com/doggy8088/TokenUsageInsights/compare/v1.1.6...v1.2.0
+[1.1.6]: https://github.com/doggy8088/TokenUsageInsights/compare/v1.1.5...v1.1.6
+[1.1.5]: https://github.com/doggy8088/TokenUsageInsights/compare/v1.1.4...v1.1.5
+[1.1.4]: https://github.com/doggy8088/TokenUsageInsights/compare/v1.1.3...v1.1.4
+[1.1.3]: https://github.com/doggy8088/TokenUsageInsights/compare/v1.1.2...v1.1.3
+[1.1.2]: https://github.com/doggy8088/TokenUsageInsights/compare/v1.1.1...v1.1.2
+[1.1.1]: https://github.com/doggy8088/TokenUsageInsights/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/doggy8088/TokenUsageInsights/compare/v1.0.6...v1.1.0
 [1.0.6]: https://github.com/doggy8088/TokenUsageInsights/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/doggy8088/TokenUsageInsights/compare/v1.0.4...v1.0.5
