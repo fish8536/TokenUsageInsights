@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 pub(crate) const SOURCE_KIND: &str = "antigravity-session";
 // Bump when parsed fields change so unchanged historical sources are re-imported.
-pub(crate) const PARSER_VERSION: u32 = 2;
+pub(crate) const PARSER_VERSION: u32 = 3;
 
 pub(crate) fn find_session_files(root: &Path) -> Result<Vec<PathBuf>, String> {
     let brain = root.join("brain");
@@ -63,8 +63,10 @@ pub(crate) fn parse_session(path: &Path) -> Result<Vec<UsageEntry>, String> {
         if line.trim().is_empty() {
             continue;
         }
-        let event: Value =
-            serde_json::from_str(&line).map_err(|e| format!("Antigravity JSONL 格式錯誤: {e}"))?;
+        let event: Value = match serde_json::from_str(&line) {
+            Ok(event) => event,
+            Err(_) => continue,
+        };
         if event.get("type").and_then(Value::as_str) != Some("PLANNER_RESPONSE") {
             continue;
         }
@@ -147,4 +149,107 @@ pub(crate) fn parse_session(path: &Path) -> Result<Vec<UsageEntry>, String> {
         });
     }
     Ok(entries)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn temp_test_dir(label: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "token-usage-insights-antigravity-test-{}-{}",
+            label,
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&path);
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    #[test]
+    fn parse_session_skips_malformed_json_lines_and_extracts_valid_usage() {
+        let root = temp_test_dir("malformed_json");
+        let session_dir = root
+            .join("brain")
+            .join("test-session-1")
+            .join(".system_generated/logs");
+        fs::create_dir_all(&session_dir).unwrap();
+        let transcript = session_dir.join("transcript_full.jsonl");
+
+        let content = concat!(
+            "{\"step_index\":0,\"source\":\"USER_EXPLICIT\",\"type\":\"USER_INPUT\",\"created_at\":\"2026-06-29T07:23:22Z\"}\n",
+            "{\"step_index\":1,\"source\":\"MODEL\",\"type\":\"PLANNER_RESPONSE\",\"created_at\":\"2026-06-29T07:23:23Z\",\"input_tokens\":100,\"output_tokens\":20,\"cache_read_tokens\":50,\"model\":\"gemini-2.5-pro\"}\n",
+            "s been modified to include a line number before every line, in the format: <line_number>: <original_line>\n",
+            "{\"step_index\":3,\"source\":\"MODEL\",\"type\":\"PLANNER_RESPONSE\",\"created_at\":\"2026-06-29T07:23:25Z\",\"input_tokens\":200,\"output_tokens\":40,\"cache_read_tokens\":0,\"model\":\"gemini-2.5-pro\"}\n"
+        );
+        fs::write(&transcript, content).unwrap();
+
+        let entries = parse_session(&transcript)
+            .expect("parse_session should succeed despite malformed lines");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].session_id, "test-session-1");
+        assert_eq!(entries[0].turn_no, 1);
+        assert_eq!(entries[0].tokens.as_ref().unwrap().input, 100);
+        assert_eq!(entries[0].tokens.as_ref().unwrap().output, 20);
+        assert_eq!(entries[0].tokens.as_ref().unwrap().cache_read, Some(50));
+        assert_eq!(entries[0].tokens.as_ref().unwrap().total, 170);
+
+        assert_eq!(entries[1].turn_no, 2);
+        assert_eq!(entries[1].tokens.as_ref().unwrap().input, 200);
+        assert_eq!(entries[1].tokens.as_ref().unwrap().output, 40);
+        assert_eq!(entries[1].tokens.as_ref().unwrap().total, 240);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn parse_session_skips_unclosed_trailing_line() {
+        let root = temp_test_dir("unclosed_line");
+        let session_dir = root
+            .join("brain")
+            .join("test-session-2")
+            .join(".system_generated/logs");
+        fs::create_dir_all(&session_dir).unwrap();
+        let transcript = session_dir.join("transcript_full.jsonl");
+
+        let mut file = File::create(&transcript).unwrap();
+        writeln!(
+            file,
+            "{{\"step_index\":1,\"source\":\"MODEL\",\"type\":\"PLANNER_RESPONSE\",\"created_at\":\"2026-06-29T07:23:23Z\",\"input_tokens\":50,\"output_tokens\":10,\"model\":\"gemini-2.5-pro\"}}"
+        ).unwrap();
+        // Trailing unclosed line without newline
+        write!(
+            file,
+            "{{\"step_index\":2,\"source\":\"MODEL\",\"type\":\"PLANNER_RESPONSE\",\"created_at\":\"2026-06-29T07:23:24Z\",\"input_tokens\":60"
+        ).unwrap();
+
+        let entries =
+            parse_session(&transcript).expect("parse_session should ignore trailing partial line");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].tokens.as_ref().unwrap().input, 50);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn parse_session_fails_on_invalid_token_values() {
+        let root = temp_test_dir("invalid_tokens");
+        let session_dir = root
+            .join("brain")
+            .join("test-session-3")
+            .join(".system_generated/logs");
+        fs::create_dir_all(&session_dir).unwrap();
+        let transcript = session_dir.join("transcript_full.jsonl");
+
+        fs::write(
+            &transcript,
+            "{\"step_index\":1,\"source\":\"MODEL\",\"type\":\"PLANNER_RESPONSE\",\"created_at\":\"2026-06-29T07:23:23Z\",\"input_tokens\":-50,\"output_tokens\":10}\n",
+        ).unwrap();
+
+        let err = parse_session(&transcript).unwrap_err();
+        assert!(err.contains("必須是非負整數"));
+
+        let _ = fs::remove_dir_all(&root);
+    }
 }
