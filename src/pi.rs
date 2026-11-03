@@ -93,6 +93,7 @@ pub(crate) fn parse_reported_cost(usage: &Value) -> Option<f64> {
 struct SessionHeaderInfo {
     session_id: String,
     cwd: Option<String>,
+    parent_session_id: Option<String>,
 }
 
 fn read_session_header(path: &Path) -> SessionHeaderInfo {
@@ -106,6 +107,7 @@ fn read_session_header(path: &Path) -> SessionHeaderInfo {
         return SessionHeaderInfo {
             session_id: fallback_id,
             cwd: None,
+            parent_session_id: None,
         };
     };
     let reader = BufReader::new(file);
@@ -134,13 +136,40 @@ fn read_session_header(path: &Path) -> SessionHeaderInfo {
                 .get("cwd")
                 .and_then(Value::as_str)
                 .map(str::to_string);
-            return SessionHeaderInfo { session_id, cwd };
+            let parent_session_id = header
+                .get("parentSession")
+                .or_else(|| header.get("parentSessionId"))
+                .or_else(|| header.get("parentId"))
+                .and_then(Value::as_str)
+                .and_then(|val| {
+                    let val = val.trim();
+                    if val.is_empty() {
+                        return None;
+                    }
+                    if val.ends_with(".jsonl") {
+                        let p = Path::new(val);
+                        let stem = p.file_stem()?.to_str()?;
+                        if let Some((_, uuid)) = stem.split_once('_') {
+                            Some(uuid.to_string())
+                        } else {
+                            Some(stem.to_string())
+                        }
+                    } else {
+                        Some(val.to_string())
+                    }
+                });
+            return SessionHeaderInfo {
+                session_id,
+                cwd,
+                parent_session_id,
+            };
         }
     }
 
     SessionHeaderInfo {
         session_id: fallback_id,
         cwd: None,
+        parent_session_id: None,
     }
 }
 
@@ -231,8 +260,11 @@ pub(crate) fn parse_session_usage_file(
             }),
             source_kind: Some(source_kind.to_string()),
             source_dir_key: None,
-            parent_session_id: None,
-            agent_nickname: None,
+            parent_session_id: header.parent_session_id.clone(),
+            agent_nickname: header
+                .parent_session_id
+                .as_ref()
+                .map(|_| "Subagent".to_string()),
             agent_role: None,
             reasoning_effort: None,
         });
@@ -380,5 +412,33 @@ mod tests {
 
         fs::remove_dir_all(&root).ok();
         assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn parse_session_usage_file_extracts_parent_session_from_path_or_id() {
+        let root = temp_jsonl_path("parse-subagent");
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("session.jsonl");
+        let mut file = File::create(&path).unwrap();
+        writeln!(
+            file,
+            r#"{{"type":"session","version":3,"id":"child-pi-1","timestamp":"2026-10-14T05:49:40.319Z","cwd":"/tmp/project","parentSession":"/Users/test/.pi/agent/sessions/--test--/2026-10-14T02-44-37-856Z_parent-pi-uuid.jsonl"}}"#
+        )
+        .unwrap();
+        writeln!(
+            file,
+            r#"{{"type":"message","id":"m1","parentId":null,"timestamp":"2026-10-14T05:49:41.000Z","message":{{"role":"assistant","content":[{{"type":"text","text":"Subagent response"}}],"provider":"anthropic","model":"claude-3-7-sonnet","usage":{{"input":200,"output":100,"totalTokens":300}}}}}}"#
+        )
+        .unwrap();
+
+        let entries = parse_session_usage_file(&path, SOURCE_KIND).unwrap();
+
+        fs::remove_dir_all(&root).ok();
+
+        assert_eq!(entries.len(), 1);
+        let entry = &entries[0];
+        assert_eq!(entry.session_id, "child-pi-1");
+        assert_eq!(entry.parent_session_id.as_deref(), Some("parent-pi-uuid"));
+        assert_eq!(entry.agent_nickname.as_deref(), Some("Subagent"));
     }
 }
