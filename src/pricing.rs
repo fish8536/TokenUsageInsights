@@ -8,6 +8,10 @@ pub const LITELLM_PRICING_FILENAME: &str = "model_prices_and_context_window.json
 pub const LITELLM_REMOTE_URL: &str =
     "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
 
+/// 內建 LiteLLM 模型定價 JSON 資料，確保在獨立執行檔或未攜帶外部資原始檔的情況下
+/// 依然具備完整 4,200+ 模型之官方價格規則（包含 gemini-3.8-flash 等）。
+pub const PACKAGED_LITELLM_JSON: &str = include_str!("../model_prices_and_context_window.json");
+
 #[derive(Debug, Clone)]
 pub struct PricingRule {
     pub model_name: String,
@@ -88,6 +92,60 @@ pub struct LiteLlmModelEntry {
 
 fn fallback_pricing_entries() -> Vec<PricingEntry> {
     vec![
+        PricingEntry {
+            model_name: "Gemini 3.8 Flash".to_string(),
+            deployment_type: "Google AI".to_string(),
+            unit: "1M Tokens".to_string(),
+            input_price: 0.75,
+            cache_input_price: 0.075,
+            output_price: 3.75,
+            batch_api_price: "0.38/1.88".to_string(),
+        },
+        PricingEntry {
+            model_name: "gemini-3.8-flash".to_string(),
+            deployment_type: "Google AI".to_string(),
+            unit: "1M Tokens".to_string(),
+            input_price: 0.75,
+            cache_input_price: 0.075,
+            output_price: 3.75,
+            batch_api_price: "0.38/1.88".to_string(),
+        },
+        PricingEntry {
+            model_name: "Gemini 3.7 Flash".to_string(),
+            deployment_type: "Google AI".to_string(),
+            unit: "1M Tokens".to_string(),
+            input_price: 0.75,
+            cache_input_price: 0.075,
+            output_price: 3.75,
+            batch_api_price: "0.38/1.88".to_string(),
+        },
+        PricingEntry {
+            model_name: "gemini-3.7-flash".to_string(),
+            deployment_type: "Google AI".to_string(),
+            unit: "1M Tokens".to_string(),
+            input_price: 0.75,
+            cache_input_price: 0.075,
+            output_price: 3.75,
+            batch_api_price: "0.38/1.88".to_string(),
+        },
+        PricingEntry {
+            model_name: "Gemini 4 Argon".to_string(),
+            deployment_type: "Google AI".to_string(),
+            unit: "1M Tokens".to_string(),
+            input_price: 2.00,
+            cache_input_price: 0.10,
+            output_price: 10.00,
+            batch_api_price: "N/A".to_string(),
+        },
+        PricingEntry {
+            model_name: "gemini-4-argon".to_string(),
+            deployment_type: "Google AI".to_string(),
+            unit: "1M Tokens".to_string(),
+            input_price: 2.00,
+            cache_input_price: 0.10,
+            output_price: 10.00,
+            batch_api_price: "N/A".to_string(),
+        },
         PricingEntry {
             model_name: "Gemini 3.5 Flash".to_string(),
             deployment_type: "Google AI".to_string(),
@@ -291,7 +349,9 @@ fn is_native_provider_for_model(model_name: &str, provider: &str) -> bool {
         return lower_provider == "anthropic";
     }
     if lower_model.contains("gemini") {
-        return lower_provider == "google" || lower_provider.starts_with("vertex_ai");
+        return lower_provider == "gemini"
+            || lower_provider == "google"
+            || lower_provider.starts_with("vertex_ai");
     }
     if lower_model.contains("gpt") || lower_model.starts_with("o1") || lower_model.starts_with("o3")
     {
@@ -332,6 +392,7 @@ fn calculate_provider_priority(model_name: &str, provider: &str) -> u8 {
         | "openai"
         | "chatgpt"
         | "google"
+        | "gemini"
         | "vertex_ai"
         | "vertex_ai-language-models"
         | "xai"
@@ -615,6 +676,11 @@ pub fn load_pricing_entries() -> Vec<PricingEntry> {
     } else {
         Vec::new()
     };
+
+    if entries.is_empty() {
+        entries = parse_litellm_json(std::io::Cursor::new(PACKAGED_LITELLM_JSON.as_bytes()))
+            .unwrap_or_default();
+    }
 
     if entries.is_empty() {
         entries = fallback_pricing_entries();
@@ -998,17 +1064,25 @@ impl PreparedPricingRules {
             .saturating_add(priced_cache_write_5m)
             .saturating_add(priced_cache_write_1h);
 
+        let stripped = strip_reasoning_labels(model_name);
+        let (s_base, _) = parse_threshold_rule(&stripped);
+
         // 1. Exact base name match (threshold-aware)
         let matched_index = self
             .find_rule_index(&m_base, prompt_tokens, false)
-            // 2. Fallback: contains base name match
+            // 2. Exact match on stripped reasoning name (e.g. "Gemini 3.8 Flash (High)" -> "Gemini 3.8 Flash")
+            .or_else(|| {
+                if s_base != m_base {
+                    self.find_rule_index(&s_base, prompt_tokens, false)
+                } else {
+                    None
+                }
+            })
+            // 3. Fallback: contains base name match
             .or_else(|| self.find_rule_index(&m_base, prompt_tokens, true))
             .or_else(|| {
-                let stripped = strip_reasoning_labels(model_name);
-                if stripped != model_name {
-                    let (s_base, _) = parse_threshold_rule(&stripped);
-                    self.find_rule_index(&s_base, prompt_tokens, false)
-                        .or_else(|| self.find_rule_index(&s_base, prompt_tokens, true))
+                if s_base != m_base {
+                    self.find_rule_index(&s_base, prompt_tokens, true)
                 } else {
                     None
                 }
@@ -2216,6 +2290,66 @@ mod tests {
         )
         .expect("muse-spark-1.2-contributor should have a pricing rule");
         assert!((contributor_12 - 0.302).abs() < 1e-12);
+    }
+
+    #[test]
+    fn gemini_3_8_flash_calculates_session_turns_with_packaged_and_embedded_fallback() {
+        let rules = load_prepared_pricing_rules();
+
+        // Turn 302: session_id=0ebefcf7-dd4a-4335-baf3-16b07361a867 turn_no=302 model=gemini-3.8-flash
+        let res1 = rules
+            .calculate_usage_cost(Some("gemini-3.8-flash"), 351_731, 33, 0, 0, 0)
+            .expect("turn 302 gemini-3.8-flash cost should calculate successfully");
+        let expected_turn_302 = (351_731.0 / 1_000_000.0) * 0.75 + (33.0 / 1_000_000.0) * 3.75;
+        assert!((res1 - expected_turn_302).abs() < 1e-9);
+
+        // Turn 1: session_id=d6d8e457-39bc-4b97-a658-d6d4c1cab113 turn_no=1 model=Gemini 3.8 Flash (High)
+        let res2 = rules
+            .calculate_usage_cost(Some("Gemini 3.8 Flash (High)"), 14_528, 261, 0, 0, 0)
+            .expect("turn 1 Gemini 3.8 Flash (High) cost should calculate successfully");
+        let expected_turn_1 = (14_528.0 / 1_000_000.0) * 0.75 + (261.0 / 1_000_000.0) * 3.75;
+        assert!((res2 - expected_turn_1).abs() < 1e-9);
+
+        // 驗證內建 PACKAGED_LITELLM_JSON 可獨立解析並包含 gemini-3.8-flash
+        let embedded_entries =
+            parse_litellm_json(std::io::Cursor::new(PACKAGED_LITELLM_JSON.as_bytes()))
+                .expect("packaged LiteLLM JSON should parse cleanly");
+        assert!(
+            embedded_entries
+                .iter()
+                .any(|e| e.model_name == "gemini-3.8-flash"
+                    || e.model_name == "gemini/gemini-3.8-flash"),
+            "embedded JSON must contain gemini-3.8-flash"
+        );
+
+        // 驗證即使完全走 fallback_pricing_entries 也能計算 gemini-3.8-flash
+        let fallback_rules = PreparedPricingRules::from_rules(
+            fallback_pricing_entries()
+                .into_iter()
+                .map(|e| PricingRule {
+                    model_name: e.model_name,
+                    input_price: e.input_price,
+                    cache_input_price: e.cache_input_price,
+                    output_price: e.output_price,
+                })
+                .collect(),
+        );
+        let fb_cost1 = fallback_rules
+            .calculate_usage_cost(Some("gemini-3.8-flash"), 1_000_000, 1_000_000, 0, 0, 0)
+            .expect("fallback rules must support gemini-3.8-flash");
+        assert!((fb_cost1 - 4.50).abs() < 1e-9);
+
+        let fb_cost2 = fallback_rules
+            .calculate_usage_cost(
+                Some("Gemini 3.8 Flash (High)"),
+                1_000_000,
+                1_000_000,
+                0,
+                0,
+                0,
+            )
+            .expect("fallback rules must support Gemini 3.8 Flash (High)");
+        assert!((fb_cost2 - 4.50).abs() < 1e-9);
     }
 
     #[test]
