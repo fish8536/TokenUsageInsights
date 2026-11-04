@@ -149,7 +149,7 @@ fn read_session_header(path: &Path) -> SessionHeaderInfo {
                     if val.ends_with(".jsonl") {
                         let p = Path::new(val);
                         let stem = p.file_stem()?.to_str()?;
-                        if let Some((_, uuid)) = stem.split_once('_') {
+                        if let Some((_, uuid)) = stem.rsplit_once('_') {
                             Some(uuid.to_string())
                         } else {
                             Some(stem.to_string())
@@ -190,6 +190,7 @@ pub(crate) fn parse_session_usage_file(
     let mut entries = Vec::new();
     let mut turn_no = 1u32;
     let mut session_name: Option<String> = None;
+    let mut agent_role: Option<String> = None;
 
     for line in reader.lines() {
         let Ok(line) = line else {
@@ -208,9 +209,83 @@ pub(crate) fn parse_session_usage_file(
 
         if entry_type == "session_info" {
             if let Some(name) = entry_value.get("name").and_then(Value::as_str) {
-                session_name = Some(name.to_string());
+                if session_name.is_none() {
+                    session_name = Some(name.to_string());
+                }
+                if name.starts_with("subagent-") {
+                    let parts: Vec<&str> = name.split('-').collect();
+                    if parts.len() >= 2 && !parts[1].is_empty() {
+                        agent_role = Some(parts[1].to_string());
+                    }
+                }
             }
             continue;
+        }
+
+        if entry_type == "message" {
+            if let Some(message) = entry_value.get("message") {
+                let role = message.get("role").and_then(Value::as_str).unwrap_or("");
+                if role == "system" && agent_role.is_none() {
+                    if let Some(sections) = message.get("sections") {
+                        if let Some(preamble) = sections.get("preamble").and_then(Value::as_str) {
+                            if let Some(start) = preamble.find("<active_agent name=\"") {
+                                let rest = &preamble[start + 20..];
+                                if let Some(end) = rest.find('"') {
+                                    agent_role = Some(rest[..end].to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+                if role == "user"
+                    && (session_name.is_none()
+                        || session_name
+                            .as_deref()
+                            .unwrap_or("")
+                            .starts_with("subagent-"))
+                {
+                    if let Some(content) = message.get("content").and_then(Value::as_array) {
+                        for item in content {
+                            if let Some(text) = item.get("text").and_then(Value::as_str) {
+                                let trimmed = text.trim();
+                                if !trimmed.is_empty()
+                                    && !trimmed.starts_with("<skill")
+                                    && !trimmed.starts_with("<loaded_context>")
+                                {
+                                    let first_line = trimmed.lines().next().unwrap_or("").trim();
+                                    let clean_name =
+                                        if let Some(stripped) = first_line.strip_prefix("Task:") {
+                                            stripped.trim()
+                                        } else {
+                                            first_line
+                                        };
+                                    if !clean_name.is_empty() {
+                                        session_name = Some(clean_name.chars().take(100).collect());
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    } else if let Some(text) = message.get("content").and_then(Value::as_str) {
+                        let trimmed = text.trim();
+                        if !trimmed.is_empty()
+                            && !trimmed.starts_with("<skill")
+                            && !trimmed.starts_with("<loaded_context>")
+                        {
+                            let first_line = trimmed.lines().next().unwrap_or("").trim();
+                            let clean_name =
+                                if let Some(stripped) = first_line.strip_prefix("Task:") {
+                                    stripped.trim()
+                                } else {
+                                    first_line
+                                };
+                            if !clean_name.is_empty() {
+                                session_name = Some(clean_name.chars().take(100).collect());
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         if entry_type != "message" {
@@ -265,10 +340,19 @@ pub(crate) fn parse_session_usage_file(
                 .parent_session_id
                 .as_ref()
                 .map(|_| "Subagent".to_string()),
-            agent_role: None,
+            agent_role: agent_role.clone(),
             reasoning_effort: None,
         });
         turn_no += 1;
+    }
+
+    for entry in &mut entries {
+        if entry.session_name.is_none() {
+            entry.session_name = session_name.clone();
+        }
+        if entry.agent_role.is_none() {
+            entry.agent_role = agent_role.clone();
+        }
     }
 
     Ok(entries)
@@ -412,6 +496,45 @@ mod tests {
 
         fs::remove_dir_all(&root).ok();
         assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn parse_session_usage_file_extracts_role_and_task_from_subagent_messages() {
+        let root = temp_jsonl_path("parse-subagent-role");
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("session.jsonl");
+        let mut file = File::create(&path).unwrap();
+        writeln!(
+            file,
+            r#"{{"type":"session","version":3,"id":"child-pi-2","timestamp":"2026-10-14T07:04:20.848Z","cwd":"/tmp/worktree","parentSession":"/Users/test/.pi/agent/sessions/--test--/2026-10-14T05-51-16-433Z_parent-uuid.jsonl"}}"#
+        )
+        .unwrap();
+        writeln!(
+            file,
+            r#"{{"type":"session_info","id":"info1","name":"subagent-worker-12345"}}"#
+        )
+        .unwrap();
+        writeln!(
+            file,
+            r#"{{"type":"message","id":"m0","message":{{"role":"user","content":[{{"type":"text","text":"<skill name=\"test\">ignore</skill>"}},{{"type":"text","text":"Task: Implement rule engine"}}]}}}}"#
+        )
+        .unwrap();
+        writeln!(
+            file,
+            r#"{{"type":"message","id":"m1","message":{{"role":"assistant","content":[{{"type":"text","text":"Done"}}],"provider":"anthropic","model":"claude-3-7-sonnet","usage":{{"input":200,"output":100,"totalTokens":300}}}}}}"#
+        )
+        .unwrap();
+
+        let entries = parse_session_usage_file(&path, SOURCE_KIND).unwrap();
+        fs::remove_dir_all(&root).ok();
+
+        assert_eq!(entries.len(), 1);
+        let entry = &entries[0];
+        assert_eq!(entry.session_id, "child-pi-2");
+        assert_eq!(entry.parent_session_id.as_deref(), Some("parent-uuid"));
+        assert_eq!(entry.agent_nickname.as_deref(), Some("Subagent"));
+        assert_eq!(entry.agent_role.as_deref(), Some("worker"));
+        assert_eq!(entry.session_name.as_deref(), Some("Implement rule engine"));
     }
 
     #[test]

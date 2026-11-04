@@ -72,12 +72,14 @@ fn aggregate_usage_details(
 
         summary.add_usage(&session_usage.usage);
 
+        let session_name = s_entries
+            .iter()
+            .find_map(|e| e.session_name.clone())
+            .unwrap_or_else(|| "Start Coding Session".to_string());
+
         sessions_summary.push(SessionSummary {
             session_id: identity.session_id.clone(),
-            session_name: last_entry
-                .session_name
-                .clone()
-                .unwrap_or_else(|| "Start Coding Session".to_string()),
+            session_name,
             assistant_type: identity.assistant_type.clone(),
             source_kind: identity.source_kind.clone(),
             source_dir_key: identity.source_dir_key.clone(),
