@@ -314,15 +314,6 @@ fn supplemental_pricing_entries() -> Vec<PricingEntry> {
             batch_api_price: "N/A".to_string(),
         },
         PricingEntry {
-            model_name: "MAI-Code-1.1-Flash".to_string(),
-            deployment_type: "Global".to_string(),
-            unit: "1M Tokens".to_string(),
-            input_price: 0.75,
-            cache_input_price: 0.075,
-            output_price: 4.50,
-            batch_api_price: "N/A".to_string(),
-        },
-        PricingEntry {
             model_name: "kimi-k3.1-pro".to_string(),
             deployment_type: "Global".to_string(),
             unit: "1M Tokens".to_string(),
@@ -340,51 +331,39 @@ fn supplemental_pricing_entries() -> Vec<PricingEntry> {
             output_price: 10.00,
             batch_api_price: "N/A".to_string(),
         },
+        // LiteLLM 沒有 DeepSeek V4.1 Flash 的原廠條目，不釘住會從轉售商中任選一個價格。
+        // 依 DeepSeek 官方定價頁（https://api-docs.deepseek.com/zh-cn/quick_start/pricing/）採尖峰費率，
+        // 換算為 0.30／0.006／1.20 美元；官方現行模型名為 deepseek-flash。
         PricingEntry {
-            model_name: "Gemini 4 Hydrogen".to_string(),
-            deployment_type: "Google AI".to_string(),
+            model_name: "deepseek-v4.1-flash".to_string(),
+            deployment_type: "Cloud".to_string(),
             unit: "1M Tokens".to_string(),
-            input_price: 1.50,
-            cache_input_price: 0.075,
-            output_price: 7.50,
-            batch_api_price: "0.75/0.0375/3.75".to_string(),
+            input_price: 0.30,
+            cache_input_price: 0.006,
+            output_price: 1.20,
+            batch_api_price: "N/A".to_string(),
         },
         PricingEntry {
-            model_name: "Gemini 4 Hydrogen (Low)".to_string(),
-            deployment_type: "Google AI".to_string(),
+            model_name: "deepseek-flash".to_string(),
+            deployment_type: "Cloud".to_string(),
             unit: "1M Tokens".to_string(),
-            input_price: 1.50,
-            cache_input_price: 0.075,
-            output_price: 7.50,
-            batch_api_price: "0.75/0.0375/3.75".to_string(),
+            input_price: 0.30,
+            cache_input_price: 0.006,
+            output_price: 1.20,
+            batch_api_price: "N/A".to_string(),
         },
+        // LiteLLM 僅有轉售商條目（其中 kyma 價格偏離），釘住 Ollama／Meta 官方費率。
         PricingEntry {
-            model_name: "Gemini 4 Hydrogen (Medium)".to_string(),
-            deployment_type: "Google AI".to_string(),
+            model_name: "muse-spark-open".to_string(),
+            deployment_type: "Ollama".to_string(),
             unit: "1M Tokens".to_string(),
-            input_price: 1.50,
-            cache_input_price: 0.075,
-            output_price: 7.50,
-            batch_api_price: "0.75/0.0375/3.75".to_string(),
+            input_price: 1.25,
+            cache_input_price: 0.15,
+            output_price: 4.25,
+            batch_api_price: "N/A".to_string(),
         },
-        PricingEntry {
-            model_name: "Gemini 4 Hydrogen (High)".to_string(),
-            deployment_type: "Google AI".to_string(),
-            unit: "1M Tokens".to_string(),
-            input_price: 1.50,
-            cache_input_price: 0.075,
-            output_price: 7.50,
-            batch_api_price: "0.75/0.0375/3.75".to_string(),
-        },
-        PricingEntry {
-            model_name: "Gemini 4 Hydrogen (Extra)".to_string(),
-            deployment_type: "Google AI".to_string(),
-            unit: "1M Tokens".to_string(),
-            input_price: 1.50,
-            cache_input_price: 0.075,
-            output_price: 7.50,
-            batch_api_price: "0.75/0.0375/3.75".to_string(),
-        },
+        // LiteLLM 收錄的 Carbon 為優惠價（輸入 2.00／輸出 10.00，至 2026-11-30 止）；
+        // 此處維持官方標準價（2026-12-01 起生效），並因補充定價優先於 LiteLLM 而生效。
         PricingEntry {
             model_name: "Gemini 4 Carbon".to_string(),
             deployment_type: "Google AI".to_string(),
@@ -518,6 +497,13 @@ fn calculate_provider_priority(model_name: &str, provider: &str) -> u8 {
         "cursor" | "global" | "local/oss" => 2,
         _ => 1,
     }
+}
+
+/// 規則名稱帶有非原廠 Provider 前綴（如 `kyma/...`、`azure_ai/...`）時視為轉售商條目。
+fn is_reseller_rule_name(model_name: &str) -> bool {
+    model_name
+        .split_once('/')
+        .is_some_and(|(prefix, _)| calculate_provider_priority(model_name, prefix) < 3)
 }
 
 pub fn parse_litellm_json<R: std::io::Read>(reader: R) -> Result<Vec<PricingEntry>, String> {
@@ -798,8 +784,10 @@ pub fn load_pricing_entries() -> Vec<PricingEntry> {
         entries = fallback_pricing_entries();
     }
 
-    entries.extend(supplemental_pricing_entries());
-    entries
+    // 補充定價放在最前面：同名比對時優先於 LiteLLM，可釘住 LiteLLM 沒有原廠條目或採優惠價的模型。
+    let mut merged = supplemental_pricing_entries();
+    merged.extend(entries);
+    merged
 }
 
 pub fn load_pricing_rules() -> Vec<PricingRule> {
@@ -1115,6 +1103,11 @@ impl PreparedPricingRules {
         let mut best_has_threshold = false;
 
         for (index, prepared) in self.parsed.iter().enumerate() {
+            // 模糊比對不採用轉售商條目（如 `kyma/gemini-3.1-pro`）：它們的名稱長度常與查詢更接近，
+            // 會搶走原廠價格；轉售商條目仍可由完整名稱精確比對。
+            if contains_match && is_reseller_rule_name(&self.rules[index].model_name) {
+                continue;
+            }
             if !rule_applies_to_context(
                 &prepared.base,
                 prepared.threshold,
@@ -1596,7 +1589,7 @@ mod tests {
             .unwrap_or_else(|error| panic!("{model_name} should have a pricing rule: {error}"));
 
             assert!(
-                (cost - 0.87).abs() < 1e-12,
+                (cost - 1.506).abs() < 1e-12,
                 "unexpected DeepSeek V4.1-Flash cost for {model_name}: {cost}"
             );
         }
@@ -2639,6 +2632,33 @@ mod tests {
         assert!(pricing_cache_is_current(&dir));
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn fuzzy_match_skips_reseller_rules_but_exact_name_still_works() {
+        let rules = vec![
+            PricingRule {
+                model_name: "kyma/gemini-3.1-pro".to_string(),
+                input_price: 2.70,
+                cache_input_price: 0.27,
+                output_price: 16.20,
+            },
+            PricingRule {
+                model_name: "gemini-3.1-pro-preview".to_string(),
+                input_price: 2.00,
+                cache_input_price: 0.20,
+                output_price: 12.00,
+            },
+        ];
+
+        // 模糊比對：轉售商名稱雖然更接近，仍應採用原廠別名（2.00 + 0.20 * 1 = 0.22 / 100k 各一半）。
+        let fuzzy =
+            calculate_cost(&rules, "Gemini 3.1 Pro (Low)", 100_000, 0, 100_000, 0, 0).unwrap();
+        assert!((fuzzy - 0.22).abs() < 1e-12);
+
+        // 以完整轉售商名稱查詢時仍精確命中該轉售商價格。
+        let exact = calculate_cost(&rules, "kyma/gemini-3.1-pro", 1_000_000, 0, 0, 0, 0).unwrap();
+        assert!((exact - 2.70).abs() < 1e-12);
     }
 
     #[tokio::test]
